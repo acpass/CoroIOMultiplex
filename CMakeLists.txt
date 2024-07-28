@@ -8,6 +8,8 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE HEADERS "include/*.hpp")
 file(GLOB_RECURSE DEMO_SRC "demo/*.cpp")
 
+add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+
 
 add_library(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC include)
