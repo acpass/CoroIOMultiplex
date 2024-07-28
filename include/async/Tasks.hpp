@@ -2,9 +2,11 @@
 
 #include <coroutine>
 #include <exception>
-#include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
+void test_fun();
+
 namespace ACPAcoro {
 
 // Awaiter used to return to previous coroutine
@@ -14,8 +16,14 @@ struct returnPrevAwaiter {
 
   // return to previous coroutine if exists
   // else suspend always (return a noop coroutine)
-  std::coroutine_handle<>
-  await_suspend(std::coroutine_handle<> callerCoro) const noexcept;
+  auto await_suspend(std::coroutine_handle<>) const noexcept
+      -> std::coroutine_handle<> {
+    if (prevCoro) {
+      return prevCoro;
+    } else {
+      return std::noop_coroutine();
+    }
+  }
 
   void await_resume() const noexcept {}
 
@@ -26,8 +34,8 @@ template <typename T>
 class promiseType;
 
 template <typename T = void>
-class Task {
-  public:
+class [[nodiscard]] Task {
+public:
   using promise_type = promiseType<T>;
 
   struct taskAwaiter {
@@ -35,41 +43,58 @@ class Task {
 
     // return the value of the task
     // else rethrow the exception
-    T await_resume() const;
+    T await_resume() const {
+      try {
+        return selfCoro.promise().getValue();
+      } catch (...) {
+        std::rethrow_exception(std::current_exception());
+      }
+    }
 
     // store the caller coroutine to the stack
     // and call the task coroutine (selfCoro)
-    std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> callerCoro) const noexcept;
+    auto await_suspend(std::coroutine_handle<> callerCoro) const noexcept
+        -> std::coroutine_handle<> {
+      selfCoro.promise().prevCoro = callerCoro;
+      return selfCoro;
+    }
 
-    Task<T> &task = nullptr;
+    std::coroutine_handle<promise_type> selfCoro = nullptr;
   };
 
-  ~Task();
+  ~Task() {
+    if (selfCoro) {
+      selfCoro.destroy();
+    }
+  }
+
   Task(std::coroutine_handle<promise_type> coro) : selfCoro(coro) {}
   Task(Task const &&other)
       : selfCoro(std::exchange(other.selfCoro, nullptr)) {};
 
   // if a exception is stored, rethrow it
   // else return a value
-  T &getValue() const;
 
-  taskAwaiter operator co_await() const noexcept;
+  taskAwaiter operator co_await() const noexcept { return {selfCoro}; }
 
+  void resume() const {
+    if (selfCoro) {
+      selfCoro.resume();
+    } else {
+      throw std::runtime_error("Task is empty");
+    }
+  }
   std::coroutine_handle<promise_type> selfCoro = nullptr;
 };
 
 template <typename T = void>
 class promiseBase {
-  public:
+public:
   using finalAwaiter = returnPrevAwaiter;
 
-  Task<T> get_return_object();
+  auto initial_suspend() -> std::suspend_always { return {}; };
 
-  std::suspend_always initial_suspend() {};
-  void unhandled_exception() noexcept {}
-
-  finalAwaiter final_suspend() noexcept;
+  auto final_suspend() noexcept -> finalAwaiter { return {prevCoro}; }
 
   void operator=(promiseBase const &&) = delete;
 
@@ -78,16 +103,57 @@ class promiseBase {
 
 template <typename T = void>
 class promiseType : public promiseBase<T> {
-  public:
-  returnPrevAwaiter return_value(T value) noexcept;
-  void unhandled_exception() noexcept;
+public:
+  Task<T> get_return_object() noexcept {
+    return Task<T>{std::coroutine_handle<promiseType>::from_promise(*this)};
+  }
+
+  void return_value(T const &value) noexcept(
+      std::is_nothrow_copy_constructible_v<T>) {
+    returnValue = value;
+  }
+
+  void
+  return_value(T &&value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    returnValue = std::move(value);
+  }
+
+  void unhandled_exception() noexcept {
+    returnValue = std::current_exception();
+  }
+
+  T &getValue() {
+    // if there is an exception, rethrow it
+    if (std::holds_alternative<std::exception_ptr>(returnValue)) {
+      std::rethrow_exception(std::get<std::exception_ptr>(returnValue));
+    }
+    return std::get<T>(returnValue);
+  }
 
   std::variant<T, std::exception_ptr> returnValue;
 };
 
 template <>
 class promiseType<void> : public promiseBase<void> {
-  returnPrevAwaiter return_void() noexcept;
+
+public:
+  Task<void> get_return_object() noexcept {
+    return Task<void>{std::coroutine_handle<promiseType>::from_promise(*this)};
+  }
+
+  void return_void() noexcept {};
+
+  void unhandled_exception() noexcept {
+    exceptionValue = std::current_exception();
+  }
+
+  void getValue() const {
+    if (exceptionValue) {
+      std::rethrow_exception(exceptionValue);
+    }
+  }
+
+  std::exception_ptr exceptionValue;
 };
 
-}; // namespace ACPAcoro
+} // namespace ACPAcoro
