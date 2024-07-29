@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <print>
@@ -16,8 +17,12 @@ struct returnPrevAwaiter {
 
   // return to previous coroutine if exists
   // else suspend always (return a noop coroutine)
-  auto await_suspend(std::coroutine_handle<>) const noexcept
+  auto await_suspend(std::coroutine_handle<> coro) const noexcept
       -> std::coroutine_handle<> {
+    if (detached.test(std::memory_order::relaxed)) {
+      coro.destroy();
+    }
+
     if (prevCoro) {
       return prevCoro;
     } else {
@@ -29,6 +34,10 @@ struct returnPrevAwaiter {
     std::println("a ended coroutine is resumed");
   }
 
+  returnPrevAwaiter(bool flag, std::coroutine_handle<> prevCoro)
+      : detached(flag), prevCoro(prevCoro) {}
+
+  std::atomic_flag detached        = ATOMIC_FLAG_INIT;
   std::coroutine_handle<> prevCoro = nullptr;
 };
 
@@ -90,6 +99,7 @@ public:
 
   // simple but wrong implementation
   std::coroutine_handle<> detach() {
+    selfCoro.promise().detached.test_and_set(std::memory_order::relaxed);
     auto coro = selfCoro;
     selfCoro  = nullptr;
     return coro;
@@ -105,10 +115,13 @@ public:
 
   auto initial_suspend() -> std::suspend_always { return {}; };
 
-  auto final_suspend() noexcept -> finalAwaiter { return {prevCoro}; }
+  auto final_suspend() noexcept -> finalAwaiter {
+    return {detached.test(std::memory_order::relaxed), prevCoro};
+  }
 
   void operator=(promiseBase const &&) = delete;
 
+  std::atomic_flag detached            = ATOMIC_FLAG_INIT;
   std::coroutine_handle<> prevCoro     = nullptr;
 };
 
