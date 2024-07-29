@@ -2,6 +2,7 @@
 
 #include <coroutine>
 #include <exception>
+#include <print>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -24,7 +25,9 @@ struct returnPrevAwaiter {
     }
   }
 
-  void await_resume() const noexcept {}
+  void await_resume() const noexcept {
+    std::println("a ended coroutine is resumed");
+  }
 
   std::coroutine_handle<> prevCoro = nullptr;
 };
@@ -84,6 +87,14 @@ public:
       throw std::runtime_error("Task is empty");
     }
   }
+
+  // simple but wrong implementation
+  std::coroutine_handle<> detach() {
+    auto coro = selfCoro;
+    selfCoro  = nullptr;
+    return coro;
+  }
+
   std::coroutine_handle<promise_type> selfCoro = nullptr;
 };
 

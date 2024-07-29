@@ -7,13 +7,17 @@
 
 namespace ACPAcoro {
 
-Task<> sleepUntil(std::chrono::system_clock::time_point time) {
-  co_await timerAwaiter{time};
+Task<> sleepUntil(std::chrono::system_clock::time_point time,
+                  std::coroutine_handle<> coro) {
+  co_await timerAwaiter{coro, time};
 }
 
-Task<> sleepFor(std::chrono::system_clock::duration duration) {
-  std::println("ready to sleep for {} seconds", duration.count());
-  co_await timerAwaiter{std::chrono::system_clock::now() + duration};
-  std::println("slept for {} seconds", duration.count());
+Task<> sleepFor(std::chrono::system_clock::duration duration,
+                std::coroutine_handle<> coro) {
+  std::println("ready to sleep for {} seconds",
+               std::chrono::duration_cast<std::chrono::seconds>(duration));
+  co_await timerAwaiter{coro, std::chrono::system_clock::now() + duration};
+  std::println("slept for {} seconds",
+               std::chrono::duration_cast<std::chrono::seconds>(duration));
 }
 } // namespace ACPAcoro
