@@ -1,11 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <stdexcept>
 #include <utility>
 #include <variant>
-void test_fun();
 
 namespace ACPAcoro {
 
@@ -62,15 +62,16 @@ public:
     std::coroutine_handle<promise_type> selfCoro = nullptr;
   };
 
-  ~Task() {
+  virtual ~Task() {
     if (selfCoro) {
       selfCoro.destroy();
     }
   }
-
-  Task(std::coroutine_handle<promise_type> coro) : selfCoro(coro) {}
+  Task(std::coroutine_handle<promise_type> coro = nullptr) : selfCoro(coro) {}
   Task(Task const &&other)
       : selfCoro(std::exchange(other.selfCoro, nullptr)) {};
+
+  operator std::coroutine_handle<>() const noexcept { return selfCoro; }
 
   // if a exception is stored, rethrow it
   // else return a value
@@ -155,5 +156,48 @@ public:
 
   std::exception_ptr exceptionValue;
 };
+
+struct getSelfAwaiter {
+  bool await_ready() const noexcept { return false; }
+
+  std::coroutine_handle<> await_resume() { return selfCoro; }
+
+  bool await_suspend(std::coroutine_handle<> callerCoro) noexcept {
+    selfCoro = callerCoro;
+    return false;
+  }
+
+  std::coroutine_handle<> selfCoro = nullptr;
+};
+// unused code for whenAll
+
+//  struct retPrevPromiseType;
+
+// struct retPrevTask : Task<> {
+//   using promise_type = retPrevPromiseType;
+//   retPrevTask(std::coroutine_handle<retPrevPromiseType> coro)
+//       : selfCoro(coro) {}
+
+//   virtual ~retPrevTask() {
+//     if (selfCoro) {
+//       selfCoro.destroy();
+//     }
+//   }
+
+//   std::coroutine_handle<retPrevPromiseType> selfCoro = nullptr;
+// };
+
+// struct retPrevPromiseType : public promiseBase<void> {
+//   retPrevTask get_return_object() noexcept {
+//     return retPrevTask{
+//         std::coroutine_handle<retPrevPromiseType>::from_promise(*this)};
+//   }
+//   void unhandled_exception() noexcept {
+//     std::rethrow_exception(std::current_exception());
+//   }
+
+//   void return_value(std::coroutine_handle<> coro) noexcept { prevCoro = coro;
+//   }
+// };
 
 } // namespace ACPAcoro
