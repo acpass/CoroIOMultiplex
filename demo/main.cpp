@@ -1,6 +1,7 @@
 #include "async/Loop.hpp"
 #include "async/Tasks.hpp"
 #include "async/Timer.hpp"
+#include "async/WhenAll.hpp"
 
 #include <chrono>
 #include <print>
@@ -9,6 +10,14 @@ using namespace std::chrono_literals;
 
 ACPAcoro::Task<int> get_value() {
   co_return 42;
+}
+
+Task<int> get_42() {
+  co_return 42;
+}
+
+Task<double> get_3_14() {
+  co_return 3.14;
 }
 
 Task<> hello() {
@@ -25,16 +34,32 @@ ACPAcoro::Task<> co_main() {
   loopInstance::getInstance().addTask(sleeptask1);
   loopInstance::getInstance().addTask(sleeptask2);
 
-  loopInstance::getInstance().addTask(sleepFor(5s, hello().detach()).detach());
+  // loopInstance::getInstance().addTask(sleepFor(5s,
+  // hello().detach()).detach());
 
   loopInstance::getInstance().runAll();
+
+  auto [a, b] = co_await whenAll(get_3_14(), get_42());
+
+  std::println("get_42() returned: {}", a);
+  std::println("get_3_14() returned: {}", b);
+
+  auto sleeptask3 = sleepFor(3s, hello().detach());
+  auto sleeptask4 = sleepFor(4s, hello().detach());
+
+  co_await whenAll(sleeptask3, sleeptask4);
+
   co_return;
 }
 
 int main() {
   auto task = co_main();
   std::println("co_main() started");
-  task.resume();
+  loopInstance::getInstance().addTask(task);
+  while (!task.selfCoro.done()) {
+    loopInstance::getInstance().runOne();
+  }
+
   std::println("co_main() ended");
   return 0;
 }

@@ -13,6 +13,8 @@ file(GLOB_RECURSE DEMO_SRC "demo/*.cpp")
 include_directories(include)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+add_link_options(-fsanitize=address)
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 

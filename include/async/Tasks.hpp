@@ -21,6 +21,7 @@ struct returnPrevAwaiter {
       -> std::coroutine_handle<> {
     if (detached.test(std::memory_order::relaxed)) {
       coro.destroy();
+      return std::noop_coroutine();
     }
 
     if (prevCoro) {
@@ -44,10 +45,10 @@ struct returnPrevAwaiter {
 template <typename T>
 class promiseType;
 
-template <typename T = void>
+template <typename T = void, typename P = promiseType<T>>
 class [[nodiscard]] Task {
 public:
-  using promise_type = promiseType<T>;
+  using promise_type = P;
 
   struct taskAwaiter {
     bool await_ready() const noexcept { return false; };
@@ -132,29 +133,22 @@ public:
     return Task<T>{std::coroutine_handle<promiseType>::from_promise(*this)};
   }
 
-  void return_value(T const &value) noexcept(
-      std::is_nothrow_copy_constructible_v<T>) {
-    returnValue = value;
-  }
-
-  void
-  return_value(T &&value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    returnValue = std::move(value);
-  }
+  void return_value(T &&value) { returnValue = std::forward<T>(value); }
 
   void unhandled_exception() noexcept {
-    returnValue = std::current_exception();
+    returnException = std::current_exception();
   }
 
   T &getValue() {
     // if there is an exception, rethrow it
-    if (std::holds_alternative<std::exception_ptr>(returnValue)) {
-      std::rethrow_exception(std::get<std::exception_ptr>(returnValue));
+    if (returnException) {
+      std::rethrow_exception(returnException);
     }
-    return std::get<T>(returnValue);
+    return returnValue;
   }
 
-  std::variant<T, std::exception_ptr> returnValue;
+  std::exception_ptr returnException = nullptr;
+  T returnValue;
 };
 
 template <>
@@ -210,17 +204,20 @@ struct getSelfAwaiter {
 //   std::coroutine_handle<retPrevPromiseType> selfCoro = nullptr;
 // };
 
-// struct retPrevPromiseType : public promiseBase<void> {
-//   retPrevTask get_return_object() noexcept {
-//     return retPrevTask{
-//         std::coroutine_handle<retPrevPromiseType>::from_promise(*this)};
-//   }
-//   void unhandled_exception() noexcept {
-//     std::rethrow_exception(std::current_exception());
-//   }
+struct retPrevPromiseType : public promiseBase<void> {
+  Task<void, retPrevPromiseType> get_return_object() noexcept {
+    return Task<void, retPrevPromiseType>{
+        std::coroutine_handle<retPrevPromiseType>::from_promise(*this)};
+  }
+  void unhandled_exception() noexcept {
+    std::rethrow_exception(std::current_exception());
+  }
 
-//   void return_value(std::coroutine_handle<> coro) noexcept { prevCoro = coro;
-//   }
-// };
+  void return_value(std::coroutine_handle<> coro) noexcept { prevCoro = coro; }
+
+  auto final_suspend() noexcept -> returnPrevAwaiter {
+    return {detached.test(std::memory_order::relaxed), prevCoro};
+  }
+};
 
 } // namespace ACPAcoro

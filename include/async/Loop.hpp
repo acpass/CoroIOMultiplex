@@ -39,7 +39,7 @@ public:
   }
 
   void runAll() {
-    while (1) {
+    while (!readyTasks.empty() || !timerEvents.empty()) {
       while (!readyTasks.empty()) {
         auto task = readyTasks.back();
         readyTasks.pop_back();
@@ -55,6 +55,19 @@ public:
       if (readyTasks.empty() && timerEvents.empty()) {
         break;
       }
+    }
+  }
+
+  void runOne() {
+    if (!readyTasks.empty()) {
+      auto task = readyTasks.back();
+      readyTasks.pop_back();
+      task.resume();
+    } else if (!timerEvents.empty() &&
+               timerEvents.top().time <= std::chrono::system_clock::now()) {
+      auto task = timerEvents.top().task;
+      timerEvents.pop();
+      task.resume();
     }
   }
 
