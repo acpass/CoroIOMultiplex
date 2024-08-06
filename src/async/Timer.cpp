@@ -16,7 +16,10 @@ Task<> sleepFor(std::chrono::system_clock::duration duration,
                 std::coroutine_handle<> coro) {
   std::println("ready to sleep for {} seconds",
                std::chrono::duration_cast<std::chrono::seconds>(duration));
-  co_await timerAwaiter{coro, std::chrono::system_clock::now() + duration};
+  co_await timerAwaiter{co_await getSelfAwaiter{},
+                        std::chrono::system_clock::now() + duration};
+  if (coro)
+    coro.resume();
   std::println("slept for {} seconds",
                std::chrono::duration_cast<std::chrono::seconds>(duration));
 }

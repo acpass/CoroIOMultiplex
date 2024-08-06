@@ -34,13 +34,13 @@ struct whenAllCtlBlock {
 
 struct whenAllAwaiter {
   auto await_ready() const noexcept -> bool { return false; }
-  auto await_suspend(std::coroutine_handle<>) const noexcept -> bool {
+  auto await_suspend(std::coroutine_handle<> callerCoro) const noexcept {
     loopInstance &loop = loopInstance::getInstance();
     for (auto coro : taskCoros) {
       loop.addTask(coro);
     }
     loop.runAll();
-    return false;
+    return callerCoro;
   }
 
   void await_resume() const noexcept {}

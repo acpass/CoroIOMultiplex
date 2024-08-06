@@ -6,7 +6,6 @@
 #include <print>
 #include <stdexcept>
 #include <utility>
-#include <variant>
 
 namespace ACPAcoro {
 
