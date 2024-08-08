@@ -30,9 +30,7 @@ struct returnPrevAwaiter {
     }
   }
 
-  void await_resume() const noexcept {
-    std::println("a ended coroutine is resumed");
-  }
+  void await_resume() const noexcept {}
 
   returnPrevAwaiter(bool flag, std::coroutine_handle<> prevCoro)
       : detached(flag), prevCoro(prevCoro) {}
@@ -97,7 +95,6 @@ public:
     }
   }
 
-  // simple but wrong implementation
   std::coroutine_handle<> detach() {
     selfCoro.promise().detached.test_and_set(std::memory_order::relaxed);
     auto coro = selfCoro;
@@ -108,7 +105,6 @@ public:
   std::coroutine_handle<promise_type> selfCoro = nullptr;
 };
 
-template <typename T = void>
 class promiseBase {
 public:
   using finalAwaiter = returnPrevAwaiter;
@@ -120,13 +116,23 @@ public:
   }
 
   void operator=(promiseBase const &&) = delete;
+  void unhandled_exception() noexcept {
+    this->returnException = std::current_exception();
+  }
 
-  std::atomic_flag detached            = ATOMIC_FLAG_INIT;
-  std::coroutine_handle<> prevCoro     = nullptr;
+  void getValue() const {
+    if (this->returnException) {
+      std::rethrow_exception(this->returnException);
+    }
+  }
+
+  std::exception_ptr returnException = nullptr;
+  std::atomic_flag detached          = ATOMIC_FLAG_INIT;
+  std::coroutine_handle<> prevCoro   = nullptr;
 };
 
 template <typename T = void>
-class promiseType : public promiseBase<T> {
+class promiseType : public promiseBase {
 public:
   Task<T> get_return_object() noexcept {
     return Task<T>{std::coroutine_handle<promiseType>::from_promise(*this)};
@@ -134,24 +140,19 @@ public:
 
   void return_value(T &&value) { returnValue = std::forward<T>(value); }
 
-  void unhandled_exception() noexcept {
-    returnException = std::current_exception();
-  }
-
   T &getValue() {
     // if there is an exception, rethrow it
-    if (returnException) {
-      std::rethrow_exception(returnException);
+    if (this->returnException) {
+      std::rethrow_exception(this->returnException);
     }
     return returnValue;
   }
 
-  std::exception_ptr returnException = nullptr;
   T returnValue;
 };
 
 template <>
-class promiseType<void> : public promiseBase<void> {
+class promiseType<void> : public promiseBase {
 
 public:
   Task<void> get_return_object() noexcept {
@@ -159,18 +160,6 @@ public:
   }
 
   void return_void() noexcept {};
-
-  void unhandled_exception() noexcept {
-    exceptionValue = std::current_exception();
-  }
-
-  void getValue() const {
-    if (exceptionValue) {
-      std::rethrow_exception(exceptionValue);
-    }
-  }
-
-  std::exception_ptr exceptionValue;
 };
 
 struct getSelfAwaiter {
@@ -203,20 +192,42 @@ struct getSelfAwaiter {
 //   std::coroutine_handle<retPrevPromiseType> selfCoro = nullptr;
 // };
 
-struct retPrevPromiseType : public promiseBase<void> {
+struct retPrevPromiseType : public promiseBase {
   Task<void, retPrevPromiseType> get_return_object() noexcept {
     return Task<void, retPrevPromiseType>{
         std::coroutine_handle<retPrevPromiseType>::from_promise(*this)};
   }
-  void unhandled_exception() noexcept {
-    std::rethrow_exception(std::current_exception());
-  }
 
   void return_value(std::coroutine_handle<> coro) noexcept { prevCoro = coro; }
+};
 
-  auto final_suspend() noexcept -> returnPrevAwaiter {
-    return {detached.test(std::memory_order::relaxed), prevCoro};
+template <typename T>
+struct yieldPromiseType : public promiseBase {
+  Task<T, yieldPromiseType<T>> get_return_object() noexcept {
+    return Task<T, yieldPromiseType>{
+        std::coroutine_handle<yieldPromiseType>::from_promise(*this)};
   }
+
+  auto yield_value(T v) noexcept {
+    returnValue = v;
+    return returnPrevAwaiter{detached.test(std::memory_order::relaxed),
+                             prevCoro};
+  }
+
+  T &getValue() {
+    if (this->returnException) {
+      std::rethrow_exception(this->returnException);
+    }
+    return returnValue;
+  }
+
+  void return_value(T &&v) noexcept {
+    ended.test_and_set();
+    returnValue = std::forward<T>(v);
+  }
+
+  std::atomic_flag ended = ATOMIC_FLAG_INIT;
+  T returnValue;
 };
 
 } // namespace ACPAcoro

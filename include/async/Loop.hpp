@@ -6,9 +6,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
-#include <queue>
 #include <set>
-#include <vector>
 
 namespace ACPAcoro {
 
@@ -48,9 +46,14 @@ public:
       while (!timerEvents.empty() &&
              timerEvents.begin()->time <= std::chrono::system_clock::now()) {
         auto task = timerEvents.begin()->task;
+        if (task.done()) [[unlikely]] {
+          timerEvents.erase(timerEvents.begin());
+          continue;
+        }
         timerEvents.erase(timerEvents.begin());
         task.resume();
       }
+
       if (readyTasks.empty() && timerEvents.empty()) {
         break;
       }

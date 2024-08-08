@@ -85,7 +85,7 @@ whenAllImpl(std::index_sequence<Is...>, Ts &&...tasks) {
 
   co_await whenAllAwaiter{taskCoros};
 
-  co_return std::move(result);
+  co_return result;
 }
 
 template <Awaitable... Ts>
