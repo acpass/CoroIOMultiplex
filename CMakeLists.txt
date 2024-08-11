@@ -18,5 +18,16 @@ add_link_options(-fsanitize=address)
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
-add_executable(demo ${DEMO_SRC})
-target_link_libraries(demo PRIVATE ${PROJECT_NAME})
+foreach(_demo_src ${DEMO_SRC})
+  string(REGEX MATCH [A-Za-z0-9\-\_]+.cpp _demo_target ${_demo_src}) # extract
+
+  # filename
+  string(LENGTH ${_demo_target} _demo_len)
+  math(EXPR _demo_len "${_demo_len}-4")
+  string(SUBSTRING ${_demo_target} 0 ${_demo_len} _demo_target) # extract filename
+                                                             # without extension
+  message("${_demo_src} -> ${_demo_target}")
+  add_executable(${_demo_target} ${_demo_src}) # add target
+  target_link_libraries(${_demo_target} PRIVATE ${PROJECT_NAME})
+endforeach(_demo_src ${DEMO_SRC})
+  

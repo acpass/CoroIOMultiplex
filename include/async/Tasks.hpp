@@ -4,6 +4,7 @@
 #include <coroutine>
 #include <exception>
 #include <print>
+#include <stdatomic.h>
 #include <stdexcept>
 #include <utility>
 
@@ -18,12 +19,13 @@ struct returnPrevAwaiter {
   // else suspend always (return a noop coroutine)
   auto await_suspend(std::coroutine_handle<> coro) const noexcept
       -> std::coroutine_handle<> {
-    if (detached.test(std::memory_order::relaxed)) {
+    if (detached.test(std::memory_order::relaxed) &&
+        ended.test(std::memory_order::relaxed)) {
       coro.destroy();
       return std::noop_coroutine();
     }
 
-    if (prevCoro) {
+    if (!detached.test() && prevCoro) {
       return prevCoro;
     } else {
       return std::noop_coroutine();
@@ -32,9 +34,12 @@ struct returnPrevAwaiter {
 
   void await_resume() const noexcept {}
 
-  returnPrevAwaiter(bool flag, std::coroutine_handle<> prevCoro)
-      : detached(flag), prevCoro(prevCoro) {}
+  returnPrevAwaiter(bool endedFlag,
+                    bool detachFlag,
+                    std::coroutine_handle<> prevCoro)
+      : ended(endedFlag), detached(detachFlag), prevCoro(prevCoro) {}
 
+  std::atomic_flag ended           = ATOMIC_FLAG_INIT;
   std::atomic_flag detached        = ATOMIC_FLAG_INIT;
   std::coroutine_handle<> prevCoro = nullptr;
 };
@@ -112,11 +117,14 @@ public:
   auto initial_suspend() -> std::suspend_always { return {}; };
 
   auto final_suspend() noexcept -> finalAwaiter {
-    return {detached.test(std::memory_order::relaxed), prevCoro};
+    return {true, detached.test(std::memory_order::relaxed), prevCoro};
   }
 
   void operator=(promiseBase const &&) = delete;
   void unhandled_exception() noexcept {
+    if (detached.test(std::memory_order::relaxed)) {
+      std::rethrow_exception(std::current_exception());
+    }
     this->returnException = std::current_exception();
   }
 
@@ -210,8 +218,8 @@ struct yieldPromiseType : public promiseBase {
 
   auto yield_value(T v) noexcept {
     returnValue = v;
-    return returnPrevAwaiter{detached.test(std::memory_order::relaxed),
-                             prevCoro};
+    return returnPrevAwaiter{
+        false, detached.test(std::memory_order::relaxed), prevCoro};
   }
 
   T &getValue() {

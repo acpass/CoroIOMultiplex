@@ -16,6 +16,17 @@ Task<int, yieldPromiseType<int>> generator() {
   co_return 10;
 }
 
+Task<int, yieldPromiseType<int>> run3times() {
+  for (int i = 0; i < 3; i++) {
+
+    std::println("run3times() yielded: {}", i);
+    co_yield i;
+    co_await sleepFor(1s);
+  }
+  std::println("run3times() returned: {}", 3);
+  co_return 3;
+}
+
 ACPAcoro::Task<int> get_value() {
   co_return 42;
 }
@@ -64,6 +75,12 @@ ACPAcoro::Task<> co_main() {
     std::println("generator() returned: {}", i);
   }
 
+  auto gen2 = run3times();
+  while (!gen2.selfCoro.done()) {
+    loopInstance::getInstance().addTask(gen2);
+    loopInstance::getInstance().runAll();
+  }
+
   co_return;
 }
 
@@ -72,7 +89,7 @@ int main() {
   std::println("co_main() started");
   loopInstance::getInstance().addTask(task);
   while (!task.selfCoro.done()) {
-    loopInstance::getInstance().runOne();
+    loopInstance::getInstance().runAll();
   }
 
   std::println("co_main() ended");
