@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <exception>
 #include <memory>
+#include <memory_resource>
 #include <print>
 #include <span>
 #include <sys/epoll.h>
@@ -19,33 +20,51 @@
 #include <vector>
 using namespace ACPAcoro;
 
-bufferPool<char, 1024> bufferPoolInstance;
+std::pmr::synchronized_pool_resource poolResource{
+    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}
+};
+// bufferPool<char, 1024> bufferPoolInstance;
+
+struct readBuffer {
+  char buffer[1024];
+};
+
+void pooltest() {
+  auto ptr = std::allocate_shared<int>(
+      std::pmr::polymorphic_allocator<int>(&poolResource), 40);
+}
 
 Task<> writer(std::shared_ptr<reactorSocket> socket,
-              std::span<char> buffer,
+              // std::span<char> buffer,
+              // char *buffer,
+              std::shared_ptr<readBuffer> buffer,
               size_t size) {
   // std::println("Writing to socket {}", socket->fd);
-  socket->send(buffer.data(), size);
-  bufferPoolInstance.returnBuffer(buffer);
+  socket->send(buffer->buffer, size);
+  // bufferPoolInstance.returnBuffer(buffer);
+  // delete[] buffer;
   co_return;
 }
 
 void echoHandle(std::shared_ptr<reactorSocket> socket) {
-  char buffer[1024];
+  // char buffer[1024];
 
   while (true) {
     try {
       // auto buffer = bufferPoolInstance.getBuffer();
-      auto read = socket->recv(buffer, sizeof(buffer));
+      auto buffer = std::allocate_shared<readBuffer>(
+          std::pmr::polymorphic_allocator<readBuffer>(&poolResource));
+      auto read = socket->recv(buffer->buffer, 1024);
       if (read == 0) {
+        // delete[] buffer;
         // bufferPoolInstance.returnBuffer(buffer);
         throw eofException();
       }
 
-      // loopInstance::getInstance().addTask(
-      //     writer(socket, buffer, read).detach());
+      loopInstance::getInstance().addTask(
+          writer(socket, buffer, read).detach());
 
-      socket->send(buffer, read);
+      // socket->send(buffer, read);
       // std::print("Read: {}", std::string_view(buffer, read));
 
     } catch (std::error_code const &e) {
@@ -89,7 +108,7 @@ Task<> co_main() {
   }
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 4; _++) {
+  for (int _ = 0; _ < 3; _++) {
     threads.emplace_back(runTasks);
   }
 
