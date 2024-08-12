@@ -29,8 +29,6 @@ public:
     bool operator<(timerEvent const &other) const { return time < other.time; }
   };
 
-  std::unordered_set<std::coroutine_handle<>> runningTasks;
-
   std::deque<std::coroutine_handle<>> readyTasks;
 
   std::mutex tasksMutex;
@@ -64,20 +62,10 @@ public:
       auto task = readyTasks.back();
       readyTasks.pop_back();
 
-      if (runningTasks.contains(task)) {
-        tasksLock.unlock();
-        continue;
-      }
-      runningTasks.insert(task);
       tasksLock.unlock();
 
       tasksCV.notify_one();
       task.resume();
-
-      {
-        std::lock_guard<std::mutex> runningTasksLock(tasksMutex);
-        runningTasks.erase(task);
-      }
     }
   }
 
@@ -92,20 +80,10 @@ public:
         auto task = std::move(readyTasks.back());
         readyTasks.pop_back();
 
-        if (runningTasks.contains(task)) {
-          tasksLock.unlock();
-          continue;
-        }
-        runningTasks.insert(task);
         tasksLock.unlock();
 
         tasksCV.notify_one();
         task.resume();
-
-        {
-          std::lock_guard<std::mutex> runningTasksLock(tasksMutex);
-          runningTasks.erase(task);
-        }
       }
 
       while (!timerEvents.empty() &&

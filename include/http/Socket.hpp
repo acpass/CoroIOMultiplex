@@ -3,6 +3,7 @@
 #include "async/Epoll.hpp"
 #include "async/Loop.hpp"
 #include "async/Tasks.hpp"
+#include "utils.hpp/BufferPool.hpp"
 #include "utils.hpp/ErrorHandle.hpp"
 
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <exception>
 #include <fcntl.h>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -70,9 +72,9 @@ struct serverSocket : public socketBase {
     fd = checkError(
         socket(addrs->ai_family, addrs->ai_socktype, addrs->ai_protocol));
 
-    // int opt = 1;
-    // checkError(setsockopt(
-    //     fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)));
+    int opt = 1;
+    checkError(setsockopt(
+        fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)));
 
     // set socket to non-blocking
     checkError(fcntl(fd, F_SETFL, O_NONBLOCK));
@@ -107,30 +109,34 @@ struct reactorSocket : public socketBase {
 
 // handler returning negative value means that the socket should be closed
 inline Task<int, yieldPromiseType<int>>
-handleSocket(reactorSocket sock, std::function<void(reactorSocket &)> handler) {
+handleSocket(std::shared_ptr<reactorSocket> sock,
+             std::function<void(std::shared_ptr<reactorSocket>)> handler) {
   while (true) {
     try {
       handler(sock);
 
     } catch (eofException const &) {
-      // epollInstance::getInstance().deleteEvent(sock.fd);
+      try {
+        epollInstance::getInstance().deleteEvent(sock->fd);
+      } catch (std::error_code const &e) {}
       co_return {};
-
+    } catch (bufferRunOut const &) {
     } catch (...) {
       std::rethrow_exception(std::current_exception());
     }
 
-    // epoll_event event;
-    // event.events   = EPOLLIN;
-    // event.data.ptr = (co_await getSelfAwaiter()).address();
-    // epollInstance::getInstance().modifyEvent(sock.fd, &event);
+    epoll_event event;
+    event.events   = EPOLLIN | EPOLLONESHOT;
+    event.data.ptr = (co_await getSelfAwaiter()).address();
+    epollInstance::getInstance().modifyEvent(sock->fd, &event);
 
     co_yield {};
   }
 }
 
 inline Task<int, yieldPromiseType<int>>
-acceptAll(serverSocket &server, std::function<void(reactorSocket &)> handler) {
+acceptAll(serverSocket &server,
+          std::function<void(std::shared_ptr<reactorSocket>)> handler) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -145,11 +151,11 @@ acceptAll(serverSocket &server, std::function<void(reactorSocket &)> handler) {
       }
       checkError(clientfd);
     }
-    reactorSocket client(clientfd);
+    auto client = std::make_shared<reactorSocket>(clientfd);
 
-    auto task = handleSocket(std::move(client), handler);
+    auto task   = handleSocket(client, handler);
     epoll_event event;
-    event.events   = EPOLLIN;
+    event.events   = EPOLLIN | EPOLLONESHOT;
     event.data.ptr = task.detach().address();
     try {
       epollInstance::getInstance().addEvent(clientfd, &event);

@@ -4,28 +4,48 @@
 #include "async/Loop.hpp"
 #include "async/Tasks.hpp"
 #include "http/Socket.hpp"
+#include "utils.hpp/BufferPool.hpp"
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <print>
+#include <span>
 #include <sys/epoll.h>
 #include <system_error>
 #include <thread>
 #include <vector>
 using namespace ACPAcoro;
 
-void echoHandle(reactorSocket &socket) {
+bufferPool<char, 1024> bufferPoolInstance;
+
+Task<> writer(std::shared_ptr<reactorSocket> socket,
+              std::span<char> buffer,
+              size_t size) {
+  // std::println("Writing to socket {}", socket->fd);
+  socket->send(buffer.data(), size);
+  bufferPoolInstance.returnBuffer(buffer);
+  co_return;
+}
+
+void echoHandle(std::shared_ptr<reactorSocket> socket) {
   char buffer[1024];
 
   while (true) {
     try {
-      auto read = socket.recv(buffer, sizeof(buffer));
+      // auto buffer = bufferPoolInstance.getBuffer();
+      auto read = socket->recv(buffer, sizeof(buffer));
       if (read == 0) {
+        // bufferPoolInstance.returnBuffer(buffer);
         throw eofException();
       }
 
-      socket.send(buffer, read);
+      // loopInstance::getInstance().addTask(
+      //     writer(socket, buffer, read).detach());
+
+      socket->send(buffer, read);
       // std::print("Read: {}", std::string_view(buffer, read));
 
     } catch (std::error_code const &e) {
