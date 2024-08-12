@@ -19,7 +19,7 @@ struct epollInstance {
   }
 
   int addEvent(int fd, epoll_event *event) {
-    std::println("addEvent: fd: {}", fd);
+    // std::println("addEvent: fd: {}", fd);
     return checkError(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, event));
   }
 
@@ -41,7 +41,8 @@ private:
 };
 
 // Wait for an event to occur on the epoll instance and add the task to the loop
-inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
+inline Task<int, yieldPromiseType<int>>
+epollWaitEvent(int timeout = -1, bool autoRefresh = false) {
   auto &epoll = epollInstance::getInstance();
   auto &loop  = loopInstance::getInstance();
   static epoll_event events[epollInstance::maxevents];
@@ -49,10 +50,11 @@ inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
 
     int fds = epoll_wait(epoll.epfd, events, epollInstance::maxevents, timeout);
     for (auto i : std::ranges::views::iota(0, fds)) {
-      loop.addHighPriorityTask(
-          std::coroutine_handle<>::from_address(events[i].data.ptr));
+      loop.addTask(std::coroutine_handle<>::from_address(events[i].data.ptr));
     }
-
+    if (autoRefresh) {
+      loop.addTask(co_await getSelfAwaiter());
+    }
     co_yield fds;
   }
   throw std::runtime_error("epollWaitEvent exited");

@@ -21,6 +21,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <system_error>
 #include <unistd.h>
 
 namespace ACPAcoro {
@@ -69,9 +70,9 @@ struct serverSocket : public socketBase {
     fd = checkError(
         socket(addrs->ai_family, addrs->ai_socktype, addrs->ai_protocol));
 
-    int opt = 1;
-    checkError(setsockopt(
-        fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)));
+    // int opt = 1;
+    // checkError(setsockopt(
+    //     fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)));
 
     // set socket to non-blocking
     checkError(fcntl(fd, F_SETFL, O_NONBLOCK));
@@ -119,17 +120,17 @@ handleSocket(reactorSocket sock, std::function<void(reactorSocket &)> handler) {
       std::rethrow_exception(std::current_exception());
     }
 
-    epoll_event event;
-    event.events   = EPOLLIN | EPOLLONESHOT;
-    event.data.ptr = (co_await getSelfAwaiter()).address();
-    epollInstance::getInstance().modifyEvent(sock.fd, &event);
+    // epoll_event event;
+    // event.events   = EPOLLIN;
+    // event.data.ptr = (co_await getSelfAwaiter()).address();
+    // epollInstance::getInstance().modifyEvent(sock.fd, &event);
 
     co_yield {};
   }
 }
 
-inline Task<> acceptAll(serverSocket &server,
-                        std::function<void(reactorSocket &)> handler) {
+inline Task<int, yieldPromiseType<int>>
+acceptAll(serverSocket &server, std::function<void(reactorSocket &)> handler) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -137,7 +138,10 @@ inline Task<> acceptAll(serverSocket &server,
     int clientfd = accept(server.fd, (sockaddr *)&addr, &addrlen);
     if (clientfd < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        break;
+        co_yield {};
+        continue;
+      } else {
+        throw std::error_code(errno, std::system_category());
       }
       checkError(clientfd);
     }
@@ -145,7 +149,7 @@ inline Task<> acceptAll(serverSocket &server,
 
     auto task = handleSocket(std::move(client), handler);
     epoll_event event;
-    event.events   = EPOLLIN | EPOLLONESHOT;
+    event.events   = EPOLLIN;
     event.data.ptr = task.detach().address();
     try {
       epollInstance::getInstance().addEvent(clientfd, &event);
@@ -154,7 +158,7 @@ inline Task<> acceptAll(serverSocket &server,
       std::terminate();
     }
   }
-  co_return;
+  co_return 1;
 };
 
 } // namespace ACPAcoro

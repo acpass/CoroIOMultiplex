@@ -6,6 +6,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <print>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -27,97 +28,83 @@ public:
     bool operator>(timerEvent const &other) const { return time > other.time; }
     bool operator<(timerEvent const &other) const { return time < other.time; }
   };
+
   std::unordered_set<std::coroutine_handle<>> runningTasks;
-  std::mutex runningTasksMutex;
 
   std::deque<std::coroutine_handle<>> readyTasks;
 
-  std::mutex readyTasksMutex;
-  std::condition_variable readyTasksCV;
-
-  std::deque<std::coroutine_handle<>> highPriorityTasks;
-  std::mutex highPriorityTasksMutex;
-  std::condition_variable highPriorityTasksCV;
+  std::mutex tasksMutex;
+  std::condition_variable_any tasksCV;
 
   std::multiset<timerEvent, std::less<timerEvent>> timerEvents;
   std::mutex timerEventsMutex;
-  std::condition_variable timerEventsCV;
+  std::condition_variable_any timerEventsCV;
 
-  enum class runMode {
-    includePriority,
-    excludePriority,
-  };
+  void addTask(std::coroutine_handle<> task) {
+    std::unique_lock<std::mutex> tasksLock(tasksMutex);
+    readyTasks.push_front(task);
+    tasksLock.unlock();
+    tasksCV.notify_one();
+  }
 
-  void addTask(std::coroutine_handle<> task) { readyTasks.push_back(task); }
   void addTimer(std::coroutine_handle<> task,
                 std::chrono::time_point<std::chrono::system_clock> time) {
+    std::unique_lock<std::mutex> timerEventsLock(timerEventsMutex);
     timerEvents.emplace(task, time);
+    timerEventsLock.unlock();
+    timerEventsCV.notify_one();
   }
 
-  void addHighPriorityTask(std::coroutine_handle<> task) {
-    highPriorityTasks.push_back(task);
-  }
+  void runTasks() {
+    while (!readyTasks.empty()) {
 
-  void runHighPriority() {
-    while (!highPriorityTasks.empty()) {
-      std::unique_lock<std::mutex> highPriorityTasksLock(
-          highPriorityTasksMutex);
-      highPriorityTasksCV.wait(highPriorityTasksLock,
-                               [&] { return !highPriorityTasks.empty(); });
-      auto task = highPriorityTasks.back();
-      highPriorityTasks.pop_back();
-      highPriorityTasksLock.unlock();
-      highPriorityTasksCV.notify_one();
+      std::unique_lock<std::mutex> tasksLock(tasksMutex);
+      tasksCV.wait(tasksLock, [&] { return !readyTasks.empty(); });
 
-      std::unique_lock<std::mutex> runningTasksLock(runningTasksMutex);
-      if (!runningTasks.contains(task)) {
-        try {
-          runningTasks.insert(task);
-          runningTasksLock.unlock();
-          task.resume();
+      auto task = readyTasks.back();
+      readyTasks.pop_back();
 
-          runningTasksLock.lock();
-          runningTasks.erase(task);
-          runningTasksLock.unlock();
+      if (runningTasks.contains(task)) {
+        tasksLock.unlock();
+        continue;
+      }
+      runningTasks.insert(task);
+      tasksLock.unlock();
 
-        } catch (...) {
-          throw std::runtime_error("Error in task");
-        };
-      } else {
-        runningTasksLock.unlock();
+      tasksCV.notify_one();
+      task.resume();
+
+      {
+        std::lock_guard<std::mutex> runningTasksLock(tasksMutex);
+        runningTasks.erase(task);
       }
     }
   }
 
-  void runAll(runMode mode = runMode::excludePriority) {
-    if (mode == runMode::includePriority) [[unlikely]] {
-      runHighPriority();
-    }
+  void runAll() {
+
     while (!readyTasks.empty() || !timerEvents.empty()) {
       while (!readyTasks.empty()) {
-        std::unique_lock<std::mutex> readyTasksLock(readyTasksMutex);
-        readyTasksCV.wait(readyTasksLock, [&] { return !readyTasks.empty(); });
-        auto task = readyTasks.back();
+
+        std::unique_lock<std::mutex> tasksLock(tasksMutex);
+        tasksCV.wait(tasksLock, [&] { return !readyTasks.empty(); });
+
+        auto task = std::move(readyTasks.back());
         readyTasks.pop_back();
-        readyTasksLock.unlock();
-        readyTasksCV.notify_one();
 
-        std::unique_lock<std::mutex> runningTasksLock(runningTasksMutex);
-        if (!runningTasks.contains(task)) {
-          try {
-            runningTasks.insert(task);
-            runningTasksLock.unlock();
-            task.resume();
+        if (runningTasks.contains(task)) {
+          tasksLock.unlock();
+          continue;
+        }
+        runningTasks.insert(task);
+        tasksLock.unlock();
 
-            runningTasksLock.lock();
-            runningTasks.erase(task);
-            runningTasksLock.unlock();
+        tasksCV.notify_one();
+        task.resume();
 
-          } catch (...) {
-            throw std::runtime_error("Error in task");
-          };
-        } else {
-          runningTasksLock.unlock();
+        {
+          std::lock_guard<std::mutex> runningTasksLock(tasksMutex);
+          runningTasks.erase(task);
         }
       }
 
@@ -136,7 +123,7 @@ public:
         }
         timerEvents.erase(timerEvents.begin());
         timerEventsLock.unlock();
-        timerEventsCV.notify_one();
+        timerEventsCV.notify_all();
         task.resume();
       }
 

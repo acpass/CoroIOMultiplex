@@ -24,6 +24,7 @@ void echoHandle(reactorSocket &socket) {
       if (read == 0) {
         throw eofException();
       }
+
       socket.send(buffer, read);
       // std::print("Read: {}", std::string_view(buffer, read));
 
@@ -31,22 +32,23 @@ void echoHandle(reactorSocket &socket) {
       if (e.value() == EAGAIN || e.value() == EWOULDBLOCK) {
         return;
       } else if (e.value() == ECONNRESET) {
-        std::println("Connection reset");
+        // std::println("Connection reset");
         return;
       } else {
-        std::println("Error: {}", e.message());
+        // std::println("Error: {}", e.message());
         std::rethrow_exception(std::current_exception());
       }
     } catch (eofException const &) {
-      std::println("connection closed");
+      // std::println("connection closed");
       std::rethrow_exception(std::current_exception());
     }
   }
 }
 
 void runTasks() {
+  std::println("Starting task loop on thread {}", std::this_thread::get_id());
   while (true) {
-    loopInstance::getInstance().runAll();
+    loopInstance::getInstance().runTasks();
   }
 }
 
@@ -55,9 +57,9 @@ Task<> co_main() {
   auto server = serverSocket("12312");
   server.listen();
   std::println("Listening on port 12312");
-  auto waitTask = epollWaitEvent();
+  auto waitTask = epollWaitEvent(-1, true);
   epoll_event event;
-  event.events   = EPOLLIN | EPOLLONESHOT;
+  event.events   = EPOLLIN;
   event.data.ptr = acceptAll(server, echoHandle).detach().address();
   try {
     epoll.addEvent(server.fd, &event);
@@ -71,12 +73,10 @@ Task<> co_main() {
     threads.emplace_back(runTasks);
   }
 
+  loopInstance::getInstance().addTask(waitTask.detach());
+
   while (true) {
-    waitTask.resume();
-    loopInstance::getInstance().runHighPriority();
-    event.events   = EPOLLIN | EPOLLONESHOT;
-    event.data.ptr = acceptAll(server, echoHandle).detach().address();
-    epoll.modifyEvent(server.fd, &event);
+    loopInstance::getInstance().runTasks();
   }
 
   co_return;
@@ -85,9 +85,10 @@ Task<> co_main() {
 int main() {
   auto mainTask = co_main();
   loopInstance::getInstance().addTask(mainTask);
+  std::println("Starting main task");
 
   while (!mainTask.selfCoro.done()) {
-    loopInstance::getInstance().runAll();
+    loopInstance::getInstance().runTasks();
   }
 
   return 0;
