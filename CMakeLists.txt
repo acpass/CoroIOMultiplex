@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 
 project(CoroIOMultiplex)
 # set(CMAKE_CXX_LINKER_LAUNCHER "ld.lld-18")
-# set(CMAKE_EXE_LINKER_FLAGS "-v")
+set(CMAKE_EXE_LINKER_FLAGS "-stdlib=libc++")
 
-set(CMAKE_CXX_STANDARD 23)
+# set(CMAKE_CXX_STANDARD 23)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE HEADERS "include/*.hpp")
@@ -12,9 +12,9 @@ file(GLOB_RECURSE DEMO_SRC "demo/*.cpp")
 
 include_directories(include)
 
-add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+add_compile_options(-fexperimental-library -std=c++26 -stdlib=libc++ -Wall -Wextra -Wpedantic -Werror)
 SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -g -fsanitize=address -fno-omit-frame-pointer")
-SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3")
+SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
 SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=address")
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})

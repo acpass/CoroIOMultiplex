@@ -96,9 +96,9 @@ Task<> co_main() {
   auto server = serverSocket("12312");
   server.listen();
   std::println("Listening on port 12312");
-  auto waitTask = epollWaitEvent(-1, true);
+  auto waitTask = epollWaitEvent(200, true);
   epoll_event event;
-  event.events   = EPOLLIN;
+  event.events   = EPOLLIN | EPOLLONESHOT;
   event.data.ptr = acceptAll(server, echoHandle).detach().address();
   try {
     epoll.addEvent(server.fd, &event);

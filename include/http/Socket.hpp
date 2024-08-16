@@ -144,6 +144,10 @@ acceptAll(serverSocket &server,
     int clientfd = accept(server.fd, (sockaddr *)&addr, &addrlen);
     if (clientfd < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        epoll_event event;
+        event.events   = EPOLLIN | EPOLLONESHOT;
+        event.data.ptr = (co_await getSelfAwaiter()).address();
+        epollInstance::getInstance().modifyEvent(server.fd, &event);
         co_yield {};
         continue;
       } else {
