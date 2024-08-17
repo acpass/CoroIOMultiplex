@@ -17,7 +17,7 @@ namespace ACPAcoro {
 class loopInstance {
 public:
   static loopInstance &getInstance() {
-    thread_local loopInstance instance;
+    static loopInstance instance;
     return instance;
   }
 

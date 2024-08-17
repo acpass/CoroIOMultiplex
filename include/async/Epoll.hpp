@@ -18,6 +18,11 @@ struct epollInstance {
     return instance;
   }
 
+  static epollInstance &getThreadInstance() {
+    thread_local epollInstance instance;
+    return instance;
+  }
+
   int addEvent(int fd, epoll_event *event) {
     // std::println("addEvent: fd: {}", fd);
     return checkError(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, event));
