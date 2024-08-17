@@ -116,9 +116,6 @@ handleSocket(std::shared_ptr<reactorSocket> sock,
       handler(sock);
 
     } catch (eofException const &) {
-      try {
-        epollInstance::getInstance().deleteEvent(sock->fd);
-      } catch (std::error_code const &e) {}
       co_return {};
     } catch (bufferRunOut const &) {
     } catch (...) {

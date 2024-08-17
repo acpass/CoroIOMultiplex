@@ -58,6 +58,7 @@ void echoHandle(std::shared_ptr<reactorSocket> socket) {
       if (read == 0) {
         // delete[] buffer;
         // bufferPoolInstance.returnBuffer(buffer);
+
         throw eofException();
       }
 
