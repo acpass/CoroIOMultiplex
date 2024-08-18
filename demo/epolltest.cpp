@@ -18,6 +18,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+
 using namespace ACPAcoro;
 
 std::pmr::synchronized_pool_resource poolResource{
@@ -46,6 +47,8 @@ Task<> writer(std::shared_ptr<reactorSocket> socket,
   co_return;
 }
 
+// bug: if the client finish sending, but do not close the connection
+// the server will create the last writer task, and yield to wait for the epoll
 void echoHandle(std::shared_ptr<reactorSocket> socket) {
   // char buffer[1024];
 
@@ -69,15 +72,17 @@ void echoHandle(std::shared_ptr<reactorSocket> socket) {
       // std::print("Read: {}", std::string_view(buffer, read));
 
     } catch (std::error_code const &e) {
+
       if (e.value() == EAGAIN || e.value() == EWOULDBLOCK) {
         return;
       } else if (e.value() == ECONNRESET) {
-        // std::println("Connection reset");
+        std::println("Connection reset");
         return;
       } else {
         // std::println("Error: {}", e.message());
         std::rethrow_exception(std::current_exception());
       }
+
     } catch (eofException const &) {
       // std::println("connection closed");
       std::rethrow_exception(std::current_exception());
@@ -97,9 +102,9 @@ Task<> co_main() {
   auto server = serverSocket("12312");
   server.listen();
   std::println("Listening on port 12312");
-  auto waitTask = epollWaitEvent(200, true);
+  auto waitTask = epollWaitEvent();
   epoll_event event;
-  event.events   = EPOLLIN | EPOLLONESHOT;
+  event.events   = EPOLLIN;
   event.data.ptr = acceptAll(server, echoHandle).detach().address();
   try {
     epoll.addEvent(server.fd, &event);
@@ -109,11 +114,11 @@ Task<> co_main() {
   }
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 3; _++) {
+  for (int _ = 0; _ < 2; _++) {
     threads.emplace_back(runTasks);
   }
 
-  loopInstance::getInstance().addTask(waitTask.detach());
+  loopInstance::getInstance().addTask(waitTask.detach(), true);
 
   while (true) {
     loopInstance::getInstance().runTasks();

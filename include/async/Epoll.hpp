@@ -4,7 +4,6 @@
 #include "async/Tasks.hpp"
 #include "utils.hpp/ErrorHandle.hpp"
 
-#include <coroutine>
 #include <print>
 #include <ranges>
 #include <sys/epoll.h>
@@ -46,24 +45,25 @@ private:
 };
 
 // Wait for an event to occur on the epoll instance and add the task to the loop
-inline Task<int, yieldPromiseType<int>>
-epollWaitEvent(int timeout = -1, bool autoRefresh = false) {
+inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
   auto &epoll = epollInstance::getInstance();
   auto &loop  = loopInstance::getInstance();
-  static epoll_event events[epollInstance::maxevents];
+  epoll_event events[epollInstance::maxevents];
   while (true) {
+    // std::println("start epollWaitEvent");
 
     int fds = epoll_wait(epoll.epfd, events, epollInstance::maxevents, timeout);
+
     for (auto i : std::ranges::views::iota(0, fds)) {
+      // std::println("epollWaitEvent: fd: {}", events[i].data.fd);
+      // std::println("epollWaitEvent: events: {}", events[i].events);
       loop.addTask(std::coroutine_handle<>::from_address(events[i].data.ptr));
     }
-    if (autoRefresh) {
-      loop.addTask(co_await getSelfAwaiter());
-    }
-    co_yield fds;
+    // std::println("finished epollWaitEvent");
+    co_yield {};
   }
   throw std::runtime_error("epollWaitEvent exited");
-  co_return -1;
+  co_return {};
 }
 
 } // namespace ACPAcoro

@@ -17,7 +17,14 @@ SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -g -fsanitize=address -fno-omit-fr
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
 SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=address")
 
+
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
+
+find_package(TBB REQUIRED)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE TBB::tbb)
+
+include_directories(${TBB_INCLUDE_DIRS})
 
 foreach(_demo_src ${DEMO_SRC})
   string(REGEX MATCH [A-Za-z0-9\-\_]+.cpp _demo_target ${_demo_src}) # extract
@@ -30,5 +37,6 @@ foreach(_demo_src ${DEMO_SRC})
   message("${_demo_src} -> ${_demo_target}")
   add_executable(${_demo_target} ${_demo_src}) # add target
   target_link_libraries(${_demo_target} PRIVATE ${PROJECT_NAME})
+  target_link_libraries(${_demo_target} PRIVATE TBB::tbb)
 endforeach(_demo_src ${DEMO_SRC})
   

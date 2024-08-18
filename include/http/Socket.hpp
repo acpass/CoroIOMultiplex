@@ -36,6 +36,7 @@ public:
 struct socketBase {
 
   virtual ~socketBase() {
+    // std::println("Closing socket {}", fd);
     if (fd >= 0)
       close(fd);
   };
@@ -116,16 +117,16 @@ handleSocket(std::shared_ptr<reactorSocket> sock,
       handler(sock);
 
     } catch (eofException const &) {
+      epollInstance::getInstance().deleteEvent(sock->fd);
       co_return {};
-    } catch (bufferRunOut const &) {
     } catch (...) {
       std::rethrow_exception(std::current_exception());
     }
 
-    epoll_event event;
-    event.events   = EPOLLIN | EPOLLONESHOT;
-    event.data.ptr = (co_await getSelfAwaiter()).address();
-    epollInstance::getInstance().modifyEvent(sock->fd, &event);
+    // epoll_event event;
+    // event.events   = EPOLLIN | EPOLLONESHOT;
+    // event.data.ptr = (co_await getSelfAwaiter()).address();
+    // epollInstance::getInstance().modifyEvent(sock->fd, &event);
 
     co_yield {};
   }
@@ -141,22 +142,22 @@ acceptAll(serverSocket &server,
     int clientfd = accept(server.fd, (sockaddr *)&addr, &addrlen);
     if (clientfd < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        epoll_event event;
-        event.events   = EPOLLIN | EPOLLONESHOT;
-        event.data.ptr = (co_await getSelfAwaiter()).address();
-        epollInstance::getInstance().modifyEvent(server.fd, &event);
+        // epoll_event event;
+        // event.events   = EPOLLIN | EPOLLONESHOT;
+        // event.data.ptr = (co_await getSelfAwaiter()).address();
+        // epollInstance::getInstance().modifyEvent(server.fd, &event);
         co_yield {};
         continue;
       } else {
         throw std::error_code(errno, std::system_category());
       }
-      checkError(clientfd);
     }
     auto client = std::make_shared<reactorSocket>(clientfd);
+    // std::println("Accepted connection on fd {}", clientfd);
 
-    auto task   = handleSocket(client, handler);
+    auto task = handleSocket(client, handler);
     epoll_event event;
-    event.events   = EPOLLIN | EPOLLONESHOT;
+    event.events   = EPOLLIN | EPOLLRDHUP | EPOLLET;
     event.data.ptr = task.detach().address();
     try {
       epollInstance::getInstance().addEvent(clientfd, &event);
@@ -165,7 +166,7 @@ acceptAll(serverSocket &server,
       std::terminate();
     }
   }
-  co_return 1;
+  co_return {};
 };
 
 } // namespace ACPAcoro

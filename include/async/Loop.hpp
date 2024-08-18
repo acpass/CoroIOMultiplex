@@ -1,16 +1,24 @@
 #pragma once
 
+#include <barrier>
 #include <chrono>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <oneapi/tbb/concurrent_hash_map.h>
+#include <oneapi/tbb/concurrent_set.h>
+#include <oneapi/tbb/detail/_task.h>
 #include <print>
 #include <set>
 #include <stdexcept>
+#include <tbb/concurrent_hash_map.h>
+#include <tbb/concurrent_queue.h>
+#include <tbb/concurrent_set.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace ACPAcoro {
 
@@ -29,7 +37,8 @@ public:
     bool operator<(timerEvent const &other) const { return time < other.time; }
   };
 
-  std::deque<std::coroutine_handle<>> readyTasks;
+  tbb::concurrent_queue<std::pair<std::coroutine_handle<>, bool>> readyTasks;
+  tbb::concurrent_hash_map<std::coroutine_handle<>, int> runningTasks;
 
   std::mutex tasksMutex;
   std::condition_variable_any tasksCV;
@@ -38,11 +47,8 @@ public:
   std::mutex timerEventsMutex;
   std::condition_variable_any timerEventsCV;
 
-  void addTask(std::coroutine_handle<> task) {
-    std::unique_lock<std::mutex> tasksLock(tasksMutex);
-    readyTasks.push_front(task);
-    tasksLock.unlock();
-    tasksCV.notify_one();
+  void addTask(std::coroutine_handle<> task, bool autoRefresh = false) {
+    readyTasks.emplace(task, autoRefresh);
   }
 
   void addTimer(std::coroutine_handle<> task,
@@ -56,35 +62,32 @@ public:
   void runTasks() {
     while (!readyTasks.empty()) {
 
-      std::unique_lock<std::mutex> tasksLock(tasksMutex);
-      tasksCV.wait(tasksLock, [&] { return !readyTasks.empty(); });
+      std::pair<std::coroutine_handle<>, bool> task;
+      if (!readyTasks.try_pop(task)) {
+        continue;
+      }
 
-      auto task = readyTasks.back();
-      readyTasks.pop_back();
+      if (!runningTasks.insert({task.first, 0})) {
 
-      tasksLock.unlock();
+        readyTasks.emplace(task);
+        continue;
+      }
 
-      tasksCV.notify_one();
-      task.resume();
+      task.first.resume();
+
+      runningTasks.erase(task.first);
+
+      if (task.second && !task.first.done()) {
+        addTask(task.first, true);
+      }
     }
   }
 
   void runAll() {
 
     while (!readyTasks.empty() || !timerEvents.empty()) {
-      while (!readyTasks.empty()) {
 
-        std::unique_lock<std::mutex> tasksLock(tasksMutex);
-        tasksCV.wait(tasksLock, [&] { return !readyTasks.empty(); });
-
-        auto task = std::move(readyTasks.back());
-        readyTasks.pop_back();
-
-        tasksLock.unlock();
-
-        tasksCV.notify_one();
-        task.resume();
-      }
+      runTasks();
 
       while (!timerEvents.empty() &&
              timerEvents.begin()->time <= std::chrono::system_clock::now()) {
