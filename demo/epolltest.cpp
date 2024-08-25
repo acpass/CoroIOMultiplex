@@ -114,7 +114,7 @@ Task<> co_main() {
   }
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 2; _++) {
+  for (int _ = 0; _ < 3; _++) {
     threads.emplace_back(runTasks);
   }
 

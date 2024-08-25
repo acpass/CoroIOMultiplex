@@ -170,3 +170,13 @@ acceptAll(serverSocket &server,
 };
 
 } // namespace ACPAcoro
+
+namespace std {
+template <>
+struct hash<ACPAcoro::reactorSocket> {
+  size_t operator()(ACPAcoro::reactorSocket const &s) const {
+    return std::hash<int>{}(s.fd);
+  }
+};
+
+} // namespace std
