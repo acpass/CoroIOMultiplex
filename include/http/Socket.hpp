@@ -162,6 +162,7 @@ handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
   while (true) {
     auto opterror = handler(sock);
 
+    // if the handler returns an error, handle it
     if (opterror) {
       if (opterror.value() == make_error_code(socketError::eofError)) {
 
