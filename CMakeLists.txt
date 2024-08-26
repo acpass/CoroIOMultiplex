@@ -12,6 +12,7 @@ file(GLOB_RECURSE DEMO_SRC "demo/*.cpp")
 
 include_directories(include)
 
+
 add_compile_options(-std=c++26 -stdlib=libstdc++ -Wall -Wextra -Wpedantic -Werror)
 SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -g -fsanitize=address -fno-omit-frame-pointer")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
@@ -21,10 +22,12 @@ SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=address")
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
 find_package(TBB REQUIRED)
+set(THIRD_PARTY_INCLUDE_DIRS ${TBB_INCLUDE_DIRS})
+set(THIRD_PARTY_INCLUDE_DIRS "${THIRD_PARTY_INCLUDE_DIRS} third/expected/include")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE TBB::tbb)
 
-include_directories(${TBB_INCLUDE_DIRS})
+include_directories(${THIRD_PARTY_INCLUDE_DIRS})
 
 foreach(_demo_src ${DEMO_SRC})
   string(REGEX MATCH [A-Za-z0-9\-\_]+.cpp _demo_target ${_demo_src}) # extract

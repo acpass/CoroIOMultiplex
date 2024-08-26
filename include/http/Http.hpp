@@ -1,6 +1,7 @@
 #pragma once
 
 #include "http/Socket.hpp"
+#include "tl/expected.hpp"
 
 #include <filesystem>
 #include <map>
@@ -9,7 +10,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
+#include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -82,11 +84,15 @@ public:
   httpRequest()  = default;
   ~httpRequest() = default;
 
-  httpRequest &parseResquest(reactorSocket &);
-  void parseHeaders(std::string_view, httpHeaders &);
+  std::optional<std::error_code> parseResquest(std::string_view);
+  std::optional<std::error_code> parseHeaders(std::string_view);
+  tl::expected<std::shared_ptr<std::string>, std::error_code>
+  readRequest(reactorSocket &);
 
-  static void checkMethod(std::string_view method);
-  static void checkVersion(std::string_view version);
+  static bool checkMethod(std::string_view method);
+  static bool checkVersion(std::string_view version);
+  static std::shared_ptr<std::string> getBuffer(int fd);
+  static void eraseBuffer(int fd);
 
   enum class method {
     GET,
@@ -128,5 +134,39 @@ class uncompletedRequest : public std::runtime_error {
 public:
   uncompletedRequest() : std::runtime_error("Uncompleted request") {}
 };
+
+enum class httpErrc {
+  success = 0,
+  badRequest,
+  uncompletedRequest,
+};
+
+inline auto const &httpErrorCode() {
+  static struct httpErrorCategory : public std::error_category {
+    char const *name() const noexcept override { return "httpError"; }
+
+    std::string message(int c) const override {
+      switch (static_cast<httpErrc>(c)) {
+      case httpErrc::success:
+        return "Success";
+      case httpErrc::badRequest:
+        return "Bad request";
+      case httpErrc::uncompletedRequest:
+        return "Uncompleted request";
+      default:
+        return "Unknown error";
+      }
+    }
+  } instance;
+  return instance;
+}
+
+inline std::error_code make_error_code(httpErrc e) {
+  return {static_cast<int>(e), httpErrorCode()};
+}
+
+inline std::error_condition make_error_condition(httpErrc e) {
+  return {static_cast<int>(e), httpErrorCode()};
+}
 
 } // namespace ACPAcoro

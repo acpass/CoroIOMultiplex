@@ -1,0 +1,3 @@
+[submodule "third/expected"]
+	path = third/expected
+	url = git@github.com:TartanLlama/expected.git

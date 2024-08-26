@@ -22,16 +22,16 @@ struct epollInstance {
     return instance;
   }
 
-  int addEvent(int fd, epoll_event *event) {
+  auto addEvent(int fd, epoll_event *event) {
     // std::println("addEvent: fd: {}", fd);
     return checkError(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, event));
   }
 
-  int modifyEvent(int fd, epoll_event *event) {
+  auto modifyEvent(int fd, epoll_event *event) {
     return checkError(epoll_ctl(epfd, EPOLL_CTL_MOD, fd, event));
   }
 
-  int deleteEvent(int fd) {
+  auto deleteEvent(int fd) {
     return checkError(epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr));
   }
 

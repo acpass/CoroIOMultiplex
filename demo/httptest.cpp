@@ -9,9 +9,11 @@
 #include <http/Socket.hpp>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <print>
 #include <string>
 #include <sys/epoll.h>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -34,29 +36,62 @@ Task<int, yieldPromiseType<int>> responseHandler(
   co_return 0;
 }
 
-void httpHandle(std::shared_ptr<reactorSocket> socket) {
+std::optional<std::error_code>
+httpHandle(std::shared_ptr<reactorSocket> socket) {
   std::println("Handling socket {}", socket->fd);
 
   while (true) {
-    try {
-      auto request = std::allocate_shared<httpRequest>(
-          std::pmr::polymorphic_allocator<httpRequest>(&poolResource));
-      request->parseResquest(*socket);
+    auto request = std::allocate_shared<httpRequest>(
+        std::pmr::polymorphic_allocator<httpRequest>(&poolResource));
+    auto readResult = request->readRequest(*socket);
 
-      auto responseTask = responseHandler(socket, request);
-      loopInstance::getInstance().addTask(responseTask.detach());
-    } catch (eofException &e) {
-      std::rethrow_exception(std::current_exception());
-    } catch (uncompletedRequest &e) {
-      return;
-    } catch (invalidRequest &e) {
-      auto responseTask = responseHandler(socket, nullptr, e.status);
-      loopInstance::getInstance().addTask(responseTask.detach());
-    } catch (...) {
-      auto responseTask = responseHandler(
-          socket, nullptr, httpResponse::statusCode::INTERNAL_SERVER_ERROR);
-      loopInstance::getInstance().addTask(responseTask.detach());
+    if (!readResult) {
+      if (readResult.error() == make_error_code(httpErrc::uncompletedRequest)) {
+        return std::nullopt;
+      } else {
+        // eof and other errors
+        return readResult.error();
+      }
     }
+
+    request
+        ->parseResquest(*readResult.value())
+
+        // and_then mean there is an error
+        .and_then([&](auto const &e) -> std::optional<std::error_code> {
+          if (e == make_error_code(httpErrc::badRequest)) {
+            auto responseTask = responseHandler(
+                socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
+            loopInstance::getInstance().addTask(responseTask.detach());
+          } else {
+            auto responseTask = responseHandler(
+                socket,
+                nullptr,
+                httpResponse::statusCode::INTERNAL_SERVER_ERROR);
+            loopInstance::getInstance().addTask(responseTask.detach());
+          }
+
+          return e;
+        })
+        // or_else mean there is no error
+        // bussiness logic
+        .or_else([&]() -> std::optional<std::error_code> {
+          auto responseTask = responseHandler(socket, request);
+          loopInstance::getInstance().addTask(responseTask.detach());
+          return std::nullopt;
+        });
+    // } catch (eofException &e) {
+    //   std::rethrow_exception(std::current_exception());
+    // } catch (uncompletedRequest &e) {
+    //   return std::nullopt;
+    // } catch (invalidRequest &e) {
+    //   auto responseTask = responseHandler(socket, nullptr, e.status);
+    //   loopInstance::getInstance().addTask(responseTask.detach());
+    // } catch (...) {
+    //   auto responseTask = responseHandler(
+    //       socket, nullptr, httpResponse::statusCode::INTERNAL_SERVER_ERROR);
+    //   loopInstance::getInstance().addTask(responseTask.detach());
+    // }
   }
 }
 

@@ -1,22 +1,19 @@
 #pragma once
 
 #include "async/Epoll.hpp"
-#include "async/Loop.hpp"
 #include "async/Tasks.hpp"
-#include "utils.hpp/BufferPool.hpp"
+#include "tl/expected.hpp"
 #include "utils.hpp/ErrorHandle.hpp"
 
-#include <algorithm>
-#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <fcntl.h>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <optional>
 #include <print>
 #include <stdexcept>
 #include <sys/epoll.h>
@@ -32,6 +29,49 @@ class eofException : public std::runtime_error {
 public:
   eofException() : std::runtime_error("EOF") {}
 };
+
+enum class socketError {
+  success = 0,
+  readError,
+  writeError,
+  recvError,
+  sendError,
+  eofError,
+};
+
+inline auto const &socketErrorCode() {
+  static struct socketErrorCategory : public std::error_category {
+    char const *name() const noexcept override { return "socketError"; }
+
+    std::string message(int c) const override {
+      switch (static_cast<socketError>(c)) {
+      case socketError::success:
+        return "Success";
+      case socketError::readError:
+        return "Read error";
+      case socketError::writeError:
+        return "Write error";
+      case socketError::recvError:
+        return "Recv error";
+      case socketError::sendError:
+        return "Send error";
+      case socketError::eofError:
+        return "EOF";
+      default:
+        return "Unknown error";
+      }
+    }
+  } instance;
+  return instance;
+}
+
+inline std::error_code make_error_code(socketError e) {
+  return {static_cast<int>(e), socketErrorCode()};
+}
+
+inline std::error_condition make_error_condition(socketError e) {
+  return {static_cast<int>(e), socketErrorCode()};
+}
 
 struct socketBase {
 
@@ -68,10 +108,13 @@ struct serverSocket : public socketBase {
     checkError(getaddrinfo(NULL,
                            port.c_str(),
                            &hints,
-                           &addrs)); // TODO: check for errors
+                           &addrs))
+        .or_else(throwUnexpected); // TODO: check for errors
 
-    fd = checkError(
+    auto sock = checkError(
         socket(addrs->ai_family, addrs->ai_socktype, addrs->ai_protocol));
+
+    fd      = sock.or_else(throwUnexpected).value();
 
     int opt = 1;
     checkError(setsockopt(
@@ -85,42 +128,48 @@ struct serverSocket : public socketBase {
     freeaddrinfo(addrs);
   }
 
-  int listen(int backlog = 4096) { return checkError(::listen(fd, backlog)); }
+  int listen(int backlog = 4096) {
+    return checkError(::listen(fd, backlog)).or_else(throwUnexpected).value();
+  }
 };
 
 struct reactorSocket : public socketBase {
   reactorSocket(int fd) : socketBase(fd) {
     // set socket to non-blocking
-    checkError(fcntl(fd, F_SETFL, O_NONBLOCK));
+    checkError(fcntl(fd, F_SETFL, O_NONBLOCK)).or_else(throwUnexpected);
   }
-  int read(char *buffer, int size) {
+  tl::expected<int, std::error_code> read(char *buffer, int size) {
     return checkError(::read(fd, buffer, size));
   }
-  int write(char *buffer, int size) {
+  tl::expected<int, std::error_code> write(char *buffer, int size) {
     return checkError(::write(fd, buffer, size));
   }
-  int recv(char *buffer, int size) {
+  tl::expected<int, std::error_code> recv(char *buffer, int size) {
     return checkError(::recv(fd, buffer, size, 0));
   }
-  int send(char *buffer, int size) {
+  tl::expected<int, std::error_code> send(char *buffer, int size) {
     return checkError(::send(fd, buffer, size, 0));
   }
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
 };
 
+using handlerType = std::function<std::optional<std::error_code>(
+    std::shared_ptr<reactorSocket>)>;
+
 // handler returning negative value means that the socket should be closed
 inline Task<int, yieldPromiseType<int>>
-handleSocket(std::shared_ptr<reactorSocket> sock,
-             std::function<void(std::shared_ptr<reactorSocket>)> handler) {
+handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
   while (true) {
-    try {
-      handler(sock);
+    auto opterror = handler(sock);
 
-    } catch (eofException const &) {
-      epollInstance::getInstance().deleteEvent(sock->fd);
-      co_return {};
-    } catch (...) {
-      std::rethrow_exception(std::current_exception());
+    if (opterror) {
+      if (opterror.value() == make_error_code(socketError::eofError)) {
+
+        co_return {};
+
+      } else {
+        std::println("Error: {}", opterror.value().message());
+      }
     }
 
     // epoll_event event;
@@ -132,9 +181,8 @@ handleSocket(std::shared_ptr<reactorSocket> sock,
   }
 }
 
-inline Task<int, yieldPromiseType<int>>
-acceptAll(serverSocket &server,
-          std::function<void(std::shared_ptr<reactorSocket>)> handler) {
+inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
+                                                  handlerType handler) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -159,12 +207,13 @@ acceptAll(serverSocket &server,
     epoll_event event;
     event.events   = EPOLLIN | EPOLLRDHUP | EPOLLET;
     event.data.ptr = task.detach().address();
-    try {
-      epollInstance::getInstance().addEvent(clientfd, &event);
-    } catch (std::error_code const &e) {
-      std::println("Error: {}", e.message());
-      std::terminate();
-    }
+
+    epollInstance::getInstance()
+        .addEvent(clientfd, &event)
+        .or_else([](auto const &e) {
+          std::println("Error adding event: {}", e.message());
+          std::terminate();
+        });
   }
   co_return {};
 };
