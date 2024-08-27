@@ -153,7 +153,7 @@ struct reactorSocket : public socketBase {
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
 };
 
-using handlerType = std::function<std::optional<std::error_code>(
+using handlerType = std::function<tl::expected<void, std::error_code>(
     std::shared_ptr<reactorSocket>)>;
 
 // handler returning negative value means that the socket should be closed
@@ -163,13 +163,13 @@ handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
     auto opterror = handler(sock);
 
     // if the handler returns an error, handle it
-    if (opterror) {
-      if (opterror.value() == make_error_code(socketError::eofError)) {
+    if (!opterror) {
+      if (opterror.error() == make_error_code(socketError::eofError)) {
 
         co_return {};
 
       } else {
-        std::println("Error: {}", opterror.value().message());
+        throw std::system_error(opterror.error());
       }
     }
 

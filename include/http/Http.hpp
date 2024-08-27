@@ -84,8 +84,22 @@ public:
   httpRequest()  = default;
   ~httpRequest() = default;
 
-  std::optional<std::error_code> parseResquest(std::string_view);
-  std::optional<std::error_code> parseHeaders(std::string_view);
+  tl::expected<void, std::error_code>
+      parseResquest(std::shared_ptr<std::string>);
+  tl::expected<void, std::error_code> parseHeaders(std::string_view &);
+  tl::expected<void, std::error_code> parseFirstLine(std::string_view &);
+
+  /**   @brief Read the request message from the socket
+   *    @return A shared_ptr to the string that contains the request message
+   *    @retval
+   *    1) socketError::eofError: when the read encounter a eof
+   *
+   *    2) httpError::uncompletedRequest: when the read encounter a EWOULDBLOCK
+   *       or EAGAIN and the request is not completed (end with "\r\n\r\n")
+   *
+   *    3) other errors: when the read encounter other error from the read
+   *       operation except EWOULDBLOCK or EAGAIN
+   */
   tl::expected<std::shared_ptr<std::string>, std::error_code>
   readRequest(reactorSocket &);
 

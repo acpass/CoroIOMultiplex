@@ -4,7 +4,9 @@
 #include "async/Loop.hpp"
 #include "async/Tasks.hpp"
 #include "http/Socket.hpp"
+#include "tl/expected.hpp"
 #include "utils.hpp/BufferPool.hpp"
+#include "utils.hpp/ErrorHandle.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -12,6 +14,7 @@
 #include <exception>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <print>
 #include <span>
 #include <sys/epoll.h>
@@ -49,43 +52,36 @@ Task<> writer(std::shared_ptr<reactorSocket> socket,
 
 // bug: if the client finish sending, but do not close the connection
 // the server will create the last writer task, and yield to wait for the epoll
-void echoHandle(std::shared_ptr<reactorSocket> socket) {
+tl::expected<void, std::error_code>
+echoHandle(std::shared_ptr<reactorSocket> socket) {
   // char buffer[1024];
 
   while (true) {
-    try {
-      // auto buffer = bufferPoolInstance.getBuffer();
-      auto buffer = std::allocate_shared<readBuffer>(
-          std::pmr::polymorphic_allocator<readBuffer>(&poolResource));
-      auto read = socket->recv(buffer->buffer, 1024);
-      if (read == 0) {
-        // delete[] buffer;
-        // bufferPoolInstance.returnBuffer(buffer);
+    // auto buffer = bufferPoolInstance.getBuffer();
+    auto buffer = std::allocate_shared<readBuffer>(
+        std::pmr::polymorphic_allocator<readBuffer>(&poolResource));
+    auto read =
+        socket->recv(buffer->buffer, 1024)
+            .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
+              if (readCnt == 0) {
+                return tl::unexpected(make_error_code(socketError::eofError));
+              }
+              return readCnt;
+            })
+            .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
+              loopInstance::getInstance().addTask(
+                  writer(socket, buffer, readCnt).detach());
 
-        throw eofException();
+              return readCnt;
+            });
+
+    if (!read) {
+      if (read.error() ==
+              make_error_code(std::errc::resource_unavailable_try_again) ||
+          read.error() == make_error_code(std::errc::operation_would_block)) {
+        return {};
       }
-
-      loopInstance::getInstance().addTask(
-          writer(socket, buffer, read).detach());
-
-      // socket->send(buffer, read);
-      // std::print("Read: {}", std::string_view(buffer, read));
-
-    } catch (std::error_code const &e) {
-
-      if (e.value() == EAGAIN || e.value() == EWOULDBLOCK) {
-        return;
-      } else if (e.value() == ECONNRESET) {
-        std::println("Connection reset");
-        return;
-      } else {
-        // std::println("Error: {}", e.message());
-        std::rethrow_exception(std::current_exception());
-      }
-
-    } catch (eofException const &) {
-      // std::println("connection closed");
-      std::rethrow_exception(std::current_exception());
+      return tl::unexpected(read.error());
     }
   }
 }
