@@ -24,7 +24,7 @@ bool httpRequest::checkMethod(std::string_view method) {
 }
 
 bool httpRequest::checkVersion(std::string_view version) {
-  return version != "HTTP/1.1";
+  return version == "HTTP/1.1";
 }
 
 std::shared_ptr<std::string> httpRequest::getBuffer(int fd) {
@@ -128,31 +128,42 @@ httpRequest::parseResquest(std::shared_ptr<std::string> requestMsg) {
 
 tl::expected<void, std::error_code>
 httpRequest::parseHeaders(std::string_view &request) {
+  std::println("Parsing headers:");
+  std::print("Request: \n{}", request);
   // fields are delimited by CRLF
   size_t pos = request.find("\r\n");
-  while (pos != std::string_view::npos && pos != 0) {
 
-    std::string_view header = request.substr(0, pos);
-    request.remove_prefix(pos + 2);
-    pos = header.find(':');
+  while (pos != 0) {
 
     if (pos == std::string_view::npos) {
       return tl::unexpected(make_error_code(httpErrc::badRequest));
     }
+    // get header line
+    std::string_view headerLine = request.substr(0, pos);
+    request.remove_prefix(pos + 2);
 
-    std::string key(header.substr(0, pos));
-    if (httpHeaders::checkHeader(key)) {
-      header.remove_prefix(pos + 1);
-      while (header[0] == ' ' && !header.empty()) {
-        header.remove_prefix(1);
-      }
-      if (!header.empty() && !(header[0] == '\r')) {
-        this->headers.data[std::move(key)] = header;
-      } else {
-        return tl::unexpected(make_error_code(httpErrc::badRequest));
-      }
-      pos = request.find("\r\n");
+    // parse the header line
+    // get key
+    pos = headerLine.find(':');
+    // check if the header line is valid
+    // unvalid case:
+    // 1) no colon in the header line
+    // 2) colon is the first character
+    if (pos == std::string_view::npos || pos == 0) {
+      return tl::unexpected(make_error_code(httpErrc::badRequest));
     }
+    std::string_view key = headerLine.substr(0, pos);
+
+    // split the key and value
+    headerLine.remove_prefix(pos + 1);
+    // get value
+    if (headerLine.empty()) {
+      return tl::unexpected(make_error_code(httpErrc::badRequest));
+    }
+    std::string_view value = headerLine;
+    headers.data.emplace(key, value);
+
+    pos = request.find("\r\n");
   }
   return {};
 }
@@ -163,6 +174,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // find the end of the request line
   size_t pos = request.find("\r\n");
   if (pos == std::string_view::npos) {
+    std::println("failed to parse in first phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view requestLine = request.substr(0, pos);
@@ -174,12 +186,14 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // parse the request line
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
+    std::println("failed to parse in second phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view method = requestLine.substr(0, pos);
   // std::println("Method: {}", method);
 
   if (!checkMethod(method)) {
+    std::println("failed to parse in third phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
 
@@ -187,6 +201,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // parse the uri
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
+    std::println("failed to parse in fourth phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view uri = requestLine.substr(0, pos);
@@ -195,11 +210,18 @@ httpRequest::parseFirstLine(std::string_view &request) {
 
   // parse the version
   std::string_view version = requestLine;
-  checkVersion(version);
+
+  std::println("Version: {}", version);
+
+  if (!checkVersion(version)) {
+    std::println("failed to parse in fifth phase");
+    return tl::unexpected(make_error_code(httpErrc::badRequest));
+  }
 
   this->method  = methodStrings.at(method);
-  this->uri     = uri;
-  this->version = version;
+  this->uri     = std::move(uri);
+  this->version = std::move(version);
+  std::println("Success to parse the firstline");
   return {};
 }
 
