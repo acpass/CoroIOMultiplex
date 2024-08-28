@@ -20,9 +20,27 @@
 using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
+constexpr std::string_view dummyResponse{
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Length: 11\r\n"
+    "hello world"};
+
+constexpr std::string_view badRequestResponse{
+    "HTTP/1.1 400 Bad Request\r\n"
+    "Content-Length: 0\r\n"};
+
 Task<int, yieldPromiseType<int>> responseHandler(
     std::shared_ptr<reactorSocket> socket, std::shared_ptr<httpRequest> request,
     httpResponse::statusCode status = httpResponse::statusCode::OK) {
+  // response to the client
+  // httpResponse response{};
+  if (status == httpResponse::statusCode::OK) {
+    socket->send((char *)dummyResponse.data(), dummyResponse.size());
+  }
+  // response a bad request or internal server error
+  else {
+    socket->send((char *)badRequestResponse.data(), badRequestResponse.size());
+  }
 
   if (status == httpResponse::statusCode::OK) {
     std::println("Handling request from socket {}", socket->fd);
@@ -41,7 +59,7 @@ Task<int, yieldPromiseType<int>> responseHandler(
 
 tl::expected<void, std::error_code>
 httpHandle(std::shared_ptr<reactorSocket> socket) {
-  std::println("Handling socket {}", socket->fd);
+  // std::println("Handling socket {}", socket->fd);
 
   while (true) {
     auto request = std::allocate_shared<httpRequest>(
@@ -57,7 +75,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             })
             // add response task
             .and_then([&]() -> tl::expected<void, std::error_code> {
-              std::println("Adding response task");
+              // std::println("Adding response task");
               auto responseTask = responseHandler(socket, request);
               loopInstance::getInstance().addTask(responseTask.detach());
               return {};
@@ -67,14 +85,14 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             // otherwise, return the error
             .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
               if (e == make_error_code(httpErrc::badRequest)) {
-                std::println("Bad request");
+                // std::println("Bad request");
                 auto responseTask = responseHandler(
                     socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
                 loopInstance::getInstance().addTask(responseTask.detach());
               } else if (e != make_error_code(socketError::eofError) &&
                          e != make_error_code(httpErrc::uncompletedRequest)) {
-                std::println("Internal server error");
-                std::println("Error: {}", e.message());
+                // std::println("Internal server error");
+                // std::println("Error: {}", e.message());
                 auto responseTask = responseHandler(
                     socket, nullptr,
                     httpResponse::statusCode::INTERNAL_SERVER_ERROR);
@@ -137,7 +155,8 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
     //   loopInstance::getInstance().addTask(responseTask.detach());
     // } catch (...) {
     //   auto responseTask = responseHandler(
-    //       socket, nullptr, httpResponse::statusCode::INTERNAL_SERVER_ERROR);
+    //       socket, nullptr,
+    //       httpResponse::statusCode::INTERNAL_SERVER_ERROR);
     //   loopInstance::getInstance().addTask(responseTask.detach());
     // }
   }
