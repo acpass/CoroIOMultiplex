@@ -5,6 +5,7 @@
 #include "tl/expected.hpp"
 #include "utils.hpp/ErrorHandle.hpp"
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <oneapi/tbb/concurrent_hash_map.h>
 #include <optional>
 #include <print>
 #include <stdexcept>
@@ -147,10 +149,14 @@ struct reactorSocket : public socketBase {
   tl::expected<int, std::error_code> recv(char *buffer, int size) {
     return checkError(::recv(fd, buffer, size, 0));
   }
-  tl::expected<int, std::error_code> send(char *buffer, int size) {
+  tl::expected<int, std::error_code> send(char const *buffer, int size) {
     return checkError(::send(fd, buffer, size, 0));
   }
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
+
+  static tbb::concurrent_hash_map<std::weak_ptr<reactorSocket>,
+                                  std::chrono::system_clock::time_point>
+      timeoutTable;
 };
 
 using handlerType = std::function<tl::expected<void, std::error_code>(

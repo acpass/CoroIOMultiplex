@@ -46,7 +46,7 @@ void httpRequest::eraseBuffer(int fd) {
 // read the request message from the socket
 tl::expected<std::shared_ptr<std::string>, std::error_code>
 httpRequest::readRequest(reactorSocket &socket) {
-  std::println("Reading request message for socket {}", socket.fd);
+  // std::println("Reading request message for socket {}", socket.fd);
   char buffer[1024];
   auto requestMessage = getBuffer(socket.fd);
   while (!this->completed) {
@@ -78,15 +78,16 @@ httpRequest::readRequest(reactorSocket &socket) {
               if (e == make_error_code(
                            std::errc::resource_unavailable_try_again) ||
                   e == make_error_code(std::errc::operation_would_block)) {
-                std::println("EWOULDBLOCK or EAGAIN");
+                // std::println("EWOULDBLOCK or EAGAIN");
 
                 if (requestMessage->ends_with("\r\n\r\n")) {
                   eraseBuffer(socket.fd);
                   this->completed = true;
+
                   return {};
                 }
 
-                std::print("request now:\n{}", *requestMessage);
+                // std::print("request now:\n{}", *requestMessage);
 
                 return tl::unexpected(
                     make_error_code(httpErrc::uncompletedRequest));
@@ -128,8 +129,8 @@ httpRequest::parseResquest(std::shared_ptr<std::string> requestMsg) {
 
 tl::expected<void, std::error_code>
 httpRequest::parseHeaders(std::string_view &request) {
-  std::println("Parsing headers:");
-  std::print("Request: \n{}", request);
+  // std::println("Parsing headers:");
+  // std::print("Request: \n{}", request);
   // fields are delimited by CRLF
   size_t pos = request.find("\r\n");
 
@@ -174,7 +175,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // find the end of the request line
   size_t pos = request.find("\r\n");
   if (pos == std::string_view::npos) {
-    std::println("failed to parse in first phase");
+    // std::println("failed to parse in first phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view requestLine = request.substr(0, pos);
@@ -186,14 +187,14 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // parse the request line
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
-    std::println("failed to parse in second phase");
+    // std::println("failed to parse in second phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view method = requestLine.substr(0, pos);
   // std::println("Method: {}", method);
 
   if (!checkMethod(method)) {
-    std::println("failed to parse in third phase");
+    // std::println("failed to parse in third phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
 
@@ -201,7 +202,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // parse the uri
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
-    std::println("failed to parse in fourth phase");
+    // std::println("failed to parse in fourth phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
   std::string_view uri = requestLine.substr(0, pos);
@@ -211,17 +212,17 @@ httpRequest::parseFirstLine(std::string_view &request) {
   // parse the version
   std::string_view version = requestLine;
 
-  std::println("Version: {}", version);
+  // std::println("Version: {}", version);
 
   if (!checkVersion(version)) {
-    std::println("failed to parse in fifth phase");
+    // std::println("failed to parse in fifth phase");
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
 
   this->method  = methodStrings.at(method);
   this->uri     = std::move(uri);
   this->version = std::move(version);
-  std::println("Success to parse the firstline");
+  // std::println("Success to parse the firstline");
   return {};
 }
 

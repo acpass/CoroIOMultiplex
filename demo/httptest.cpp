@@ -6,7 +6,13 @@
 #include <async/Epoll.hpp>
 #include <async/Loop.hpp>
 #include <async/Tasks.hpp>
+#include <cstddef>
 #include <cstdio>
+<<<<<<< HEAD
+=======
+#include <cstring>
+#include <exception>
+>>>>>>> d3dfe23 (commit: before merge with remote)
 #include <http/Socket.hpp>
 #include <memory>
 #include <memory_resource>
@@ -20,30 +26,44 @@
 using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
-constexpr std::string_view dummyResponse{
+char const *dummyResponse{
     "HTTP/1.1 200 OK\r\n"
-    "Content-Length: 11\r\n"
-    "hello world"};
+    "Content-Length: 13\r\n"
+    "Content-Type: text/html\r\n"
+    "Cache-Control: no-cache\r\n"
+    "hello world\r\n"};
+size_t const dummyResponseSize = strlen(dummyResponse);
 
-constexpr std::string_view badRequestResponse{
+char const *badRequestResponse{
     "HTTP/1.1 400 Bad Request\r\n"
     "Content-Length: 0\r\n"};
+size_t const badRequestResponseSize = strlen(badRequestResponse);
 
 Task<int, yieldPromiseType<int>> responseHandler(
     std::shared_ptr<reactorSocket> socket, std::shared_ptr<httpRequest> request,
     httpResponse::statusCode status = httpResponse::statusCode::OK) {
   // response to the client
   // httpResponse response{};
+  std::println("Handling response from socket {}", socket->fd);
   if (status == httpResponse::statusCode::OK) {
-    socket->send((char *)dummyResponse.data(), dummyResponse.size());
+
+    socket->send(dummyResponse, dummyResponseSize)
+        .map_error([&](auto const &e) {
+          std::println("Error: {}", e.message());
+          return e;
+        });
   }
   // response a bad request or internal server error
   else {
-    socket->send((char *)badRequestResponse.data(), badRequestResponse.size());
+    socket->send(badRequestResponse, badRequestResponseSize)
+        .map_error([&](auto const &e) {
+          std::println("Error: {}", e.message());
+          return e;
+        });
   }
 
   if (status == httpResponse::statusCode::OK) {
-    std::println("Handling request from socket {}", socket->fd);
+    // std::println("Handling request from socket {}", socket->fd);
     std::println("Request: {}", request->uri.string());
     std::println("Status: {}", httpResponse::statusStrings.at(status));
     std::println("Headers: ");
