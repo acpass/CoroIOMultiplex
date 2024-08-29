@@ -15,7 +15,6 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <oneapi/tbb/concurrent_hash_map.h>
-#include <optional>
 #include <print>
 #include <stdexcept>
 #include <sys/epoll.h>
@@ -84,7 +83,7 @@ struct socketBase {
   };
 
   socketBase &operator=(socketBase &&other) {
-    fd       = other.fd;
+    fd = other.fd;
     other.fd = -1;
     return *this;
   }
@@ -92,7 +91,7 @@ struct socketBase {
   socketBase(int fd) : fd(fd) {}
 
   socketBase() : fd(-1) {};
-  socketBase(socketBase const &)            = delete;
+  socketBase(socketBase const &) = delete;
   socketBase &operator=(socketBase const &) = delete;
 
   int fd;
@@ -103,24 +102,22 @@ struct serverSocket : public socketBase {
     addrinfo *addrs;
     addrinfo hints = {};
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags    = AI_PASSIVE;
+    hints.ai_flags = AI_PASSIVE;
 
-    checkError(getaddrinfo(NULL,
-                           port.c_str(),
-                           &hints,
+    checkError(getaddrinfo(NULL, port.c_str(), &hints,
                            &addrs))
         .or_else(throwUnexpected); // TODO: check for errors
 
     auto sock = checkError(
         socket(addrs->ai_family, addrs->ai_socktype, addrs->ai_protocol));
 
-    fd      = sock.or_else(throwUnexpected).value();
+    fd = sock.or_else(throwUnexpected).value();
 
     int opt = 1;
-    checkError(setsockopt(
-        fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)));
+    checkError(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt,
+                          sizeof(opt)));
 
     // set socket to non-blocking
     checkError(fcntl(fd, F_SETFL, O_NONBLOCK));
@@ -212,7 +209,7 @@ inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
 
     auto task = handleSocket(client, handler);
     epoll_event event;
-    event.events   = EPOLLIN | EPOLLRDHUP | EPOLLET;
+    event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;
     event.data.ptr = task.detach().address();
 
     epollInstance::getInstance()
@@ -228,8 +225,7 @@ inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
 } // namespace ACPAcoro
 
 namespace std {
-template <>
-struct hash<ACPAcoro::reactorSocket> {
+template <> struct hash<ACPAcoro::reactorSocket> {
   size_t operator()(ACPAcoro::reactorSocket const &s) const {
     return std::hash<int>{}(s.fd);
   }

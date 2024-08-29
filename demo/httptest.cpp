@@ -8,11 +8,7 @@
 #include <async/Tasks.hpp>
 #include <cstddef>
 #include <cstdio>
-<<<<<<< HEAD
-=======
 #include <cstring>
-#include <exception>
->>>>>>> d3dfe23 (commit: before merge with remote)
 #include <http/Socket.hpp>
 #include <memory>
 #include <memory_resource>
@@ -26,17 +22,15 @@
 using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
-char const *dummyResponse{
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: 13\r\n"
-    "Content-Type: text/html\r\n"
-    "Cache-Control: no-cache\r\n"
-    "hello world\r\n"};
+char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
+                          "Content-Length: 13\r\n"
+                          "Content-Type: text/html\r\n"
+                          "Cache-Control: no-cache\r\n"
+                          "hello world\r\n"};
 size_t const dummyResponseSize = strlen(dummyResponse);
 
-char const *badRequestResponse{
-    "HTTP/1.1 400 Bad Request\r\n"
-    "Content-Length: 0\r\n"};
+char const *badRequestResponse{"HTTP/1.1 400 Bad Request\r\n"
+                               "Content-Length: 0\r\n"};
 size_t const badRequestResponseSize = strlen(badRequestResponse);
 
 Task<int, yieldPromiseType<int>> responseHandler(
