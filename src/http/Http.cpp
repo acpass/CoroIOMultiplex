@@ -3,11 +3,9 @@
 #include "http/Socket.hpp"
 #include "tl/expected.hpp"
 
-#include <exception>
 #include <expected>
 #include <memory>
 #include <oneapi/tbb/concurrent_hash_map.h>
-#include <optional>
 #include <print>
 #include <string>
 #include <string_view>
@@ -39,9 +37,7 @@ std::shared_ptr<std::string> httpRequest::getBuffer(int fd) {
   }
 }
 
-void httpRequest::eraseBuffer(int fd) {
-  uncompletedRequests.erase(fd);
-}
+void httpRequest::eraseBuffer(int fd) { uncompletedRequests.erase(fd); }
 
 // read the request message from the socket
 tl::expected<std::shared_ptr<std::string>, std::error_code>
@@ -219,8 +215,8 @@ httpRequest::parseFirstLine(std::string_view &request) {
     return tl::unexpected(make_error_code(httpErrc::badRequest));
   }
 
-  this->method  = methodStrings.at(method);
-  this->uri     = std::move(uri);
+  this->method = methodStrings.at(method);
+  this->uri = std::move(uri);
   this->version = std::move(version);
   // std::println("Success to parse the firstline");
   return {};

@@ -38,6 +38,7 @@ enum class socketError {
   recvError,
   sendError,
   eofError,
+  closedSocket,
 };
 
 inline auto const &socketErrorCode() {
@@ -138,22 +139,34 @@ struct reactorSocket : public socketBase {
     checkError(fcntl(fd, F_SETFL, O_NONBLOCK)).or_else(throwUnexpected);
   }
   tl::expected<int, std::error_code> read(char *buffer, int size) {
+    if (fd < 0) {
+      return tl::unexpected(make_error_code(socketError::readError));
+    }
     return checkError(::read(fd, buffer, size));
   }
   tl::expected<int, std::error_code> write(char *buffer, int size) {
+    if (fd < 0) {
+      return tl::unexpected(make_error_code(socketError::writeError));
+    }
     return checkError(::write(fd, buffer, size));
   }
   tl::expected<int, std::error_code> recv(char *buffer, int size) {
+    if (fd < 0) {
+      return tl::unexpected(make_error_code(socketError::recvError));
+    }
     return checkError(::recv(fd, buffer, size, 0));
   }
   tl::expected<int, std::error_code> send(char const *buffer, int size) {
+    if (fd < 0) {
+      return tl::unexpected(make_error_code(socketError::sendError));
+    }
     return checkError(::send(fd, buffer, size, 0));
   }
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
 
-  static tbb::concurrent_hash_map<std::weak_ptr<reactorSocket>,
-                                  std::chrono::system_clock::time_point>
-      timeoutTable;
+  // static tbb::concurrent_hash_map<std::weak_ptr<reactorSocket>,
+  //                                 std::chrono::system_clock::time_point>
+  //     timeoutTable;
 };
 
 using handlerType = std::function<tl::expected<void, std::error_code>(

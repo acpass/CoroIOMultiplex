@@ -25,7 +25,7 @@ std::pmr::synchronized_pool_resource poolResource{};
 char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
                           "Content-Length: 13\r\n"
                           "Content-Type: text/html\r\n"
-                          "Cache-Control: no-cache\r\n"
+                          "Cache-Control: no-cache\r\n\r\n"
                           "hello world\r\n"};
 size_t const dummyResponseSize = strlen(dummyResponse);
 
