@@ -20,19 +20,13 @@ namespace ACPAcoro {
 
 class httpHeaders {
 public:
-  httpHeaders()  = default;
+  httpHeaders() = default;
   ~httpHeaders() = default;
 
   static inline std::unordered_set<std::string_view> const validRequestHeaders =
       {
-          "Accept",
-          "Accept-Encoding",
-          "Connection",
-          "Host",
-          "User-Agent",
-          "Content-Encoding",
-          "Content-Type",
-          "Content-Length",
+          "Accept",     "Accept-Encoding",  "Connection",   "Host",
+          "User-Agent", "Content-Encoding", "Content-Type", "Content-Length",
   };
 
   static bool checkHeader(std::string_view header) {
@@ -43,34 +37,34 @@ public:
 
 class chunkedBody {
 public:
-  chunkedBody()  = default;
+  chunkedBody() = default;
   ~chunkedBody() = default;
   std::vector<std::pair<size_t, std::string>> chunks;
 };
 
 class httpMessage {
 public:
-  httpMessage()          = default;
+  httpMessage() = default;
   virtual ~httpMessage() = default;
 
   enum class statusCode {
-    OK                         = 200,
-    BAD_REQUEST                = 400,
-    NOT_FOUND                  = 404,
-    LENTH_REQUIRED             = 411,
-    INTERNAL_SERVER_ERROR      = 500,
-    NOT_IMPLEMENTED            = 501,
+    OK = 200,
+    BAD_REQUEST = 400,
+    NOT_FOUND = 404,
+    LENTH_REQUIRED = 411,
+    INTERNAL_SERVER_ERROR = 500,
+    NOT_IMPLEMENTED = 501,
     HTTP_VERSION_NOT_SUPPORTED = 505,
   };
 
   static inline std::unordered_map<statusCode,
                                    std::string_view> const statusStrings = {
-      {                        statusCode::OK,                         "OK"},
-      {               statusCode::BAD_REQUEST,                "Bad Request"},
-      {                 statusCode::NOT_FOUND,                  "Not Found"},
-      {            statusCode::LENTH_REQUIRED,            "Length Required"},
-      {     statusCode::INTERNAL_SERVER_ERROR,      "Internal Server Error"},
-      {           statusCode::NOT_IMPLEMENTED,            "Not Implemented"},
+      {statusCode::OK, "OK"},
+      {statusCode::BAD_REQUEST, "Bad Request"},
+      {statusCode::NOT_FOUND, "Not Found"},
+      {statusCode::LENTH_REQUIRED, "Length Required"},
+      {statusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"},
+      {statusCode::NOT_IMPLEMENTED, "Not Implemented"},
       {statusCode::HTTP_VERSION_NOT_SUPPORTED, "HTTP Version Not Supported"},
   };
 
@@ -81,7 +75,7 @@ public:
 
 class httpRequest : public httpMessage {
 public:
-  httpRequest()  = default;
+  httpRequest() = default;
   ~httpRequest() = default;
 
   tl::expected<void, std::error_code>
@@ -114,7 +108,7 @@ public:
   };
 
   static inline std::map<std::string_view, method> const methodStrings = {
-      { "GET",  method::GET},
+      {"GET", method::GET},
       {"HEAD", method::HEAD},
   };
 
@@ -129,7 +123,7 @@ public:
 
 class httpResponse : public httpMessage {
 public:
-  httpResponse()  = default;
+  httpResponse() = default;
   ~httpResponse() = default;
 
   std::filesystem::path uri;

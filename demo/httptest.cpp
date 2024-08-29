@@ -7,11 +7,9 @@
 #include <async/Loop.hpp>
 #include <async/Tasks.hpp>
 #include <cstdio>
-#include <exception>
 #include <http/Socket.hpp>
 #include <memory>
 #include <memory_resource>
-#include <optional>
 #include <print>
 #include <string>
 #include <sys/epoll.h>
@@ -23,8 +21,7 @@ using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
 Task<int, yieldPromiseType<int>> responseHandler(
-    std::shared_ptr<reactorSocket> socket,
-    std::shared_ptr<httpRequest> request,
+    std::shared_ptr<reactorSocket> socket, std::shared_ptr<httpRequest> request,
     httpResponse::statusCode status = httpResponse::statusCode::OK) {
 
   if (status == httpResponse::statusCode::OK) {
@@ -79,8 +76,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
                 std::println("Internal server error");
                 std::println("Error: {}", e.message());
                 auto responseTask = responseHandler(
-                    socket,
-                    nullptr,
+                    socket, nullptr,
                     httpResponse::statusCode::INTERNAL_SERVER_ERROR);
                 loopInstance::getInstance().addTask(responseTask.detach());
               }
@@ -160,11 +156,11 @@ Task<> co_main(std::string const &port) {
 
   server->listen();
 
-  auto &loop  = loopInstance::getInstance();
+  auto &loop = loopInstance::getInstance();
   auto &epoll = epollInstance::getInstance();
 
   epoll_event event;
-  event.events   = EPOLLIN | EPOLLET;
+  event.events = EPOLLIN | EPOLLET;
   event.data.ptr = acceptAll(*server, httpHandle).detach().address();
   epoll.addEvent(server->fd, &event);
 
