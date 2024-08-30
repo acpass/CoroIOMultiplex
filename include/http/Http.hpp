@@ -18,6 +18,17 @@
 #include <vector>
 namespace ACPAcoro {
 
+enum class httpErrc {
+  OK = 200,
+  BAD_REQUEST = 400,
+  NOT_FOUND = 404,
+  LENTH_REQUIRED = 411,
+  INTERNAL_SERVER_ERROR = 500,
+  NOT_IMPLEMENTED = 501,
+  HTTP_VERSION_NOT_SUPPORTED = 505,
+  UNCOMPLETED_REQUEST = 600,
+};
+
 class httpHeaders {
 public:
   httpHeaders() = default;
@@ -47,26 +58,19 @@ public:
   httpMessage() = default;
   virtual ~httpMessage() = default;
 
-  enum class statusCode {
-    OK = 200,
-    BAD_REQUEST = 400,
-    NOT_FOUND = 404,
-    LENTH_REQUIRED = 411,
-    INTERNAL_SERVER_ERROR = 500,
-    NOT_IMPLEMENTED = 501,
-    HTTP_VERSION_NOT_SUPPORTED = 505,
+  using statusCode = httpErrc;
+
+  enum class method {
+    GET,
+    HEAD,
   };
 
-  static inline std::unordered_map<statusCode,
-                                   std::string_view> const statusStrings = {
-      {statusCode::OK, "OK"},
-      {statusCode::BAD_REQUEST, "Bad Request"},
-      {statusCode::NOT_FOUND, "Not Found"},
-      {statusCode::LENTH_REQUIRED, "Length Required"},
-      {statusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"},
-      {statusCode::NOT_IMPLEMENTED, "Not Implemented"},
-      {statusCode::HTTP_VERSION_NOT_SUPPORTED, "HTTP Version Not Supported"},
+  static inline std::map<std::string_view, method> const methodStrings = {
+      {"GET", method::GET},
+      {"HEAD", method::HEAD},
   };
+
+  method method;
 
   std::string version;
   httpHeaders headers;
@@ -102,17 +106,6 @@ public:
   static std::shared_ptr<std::string> getBuffer(int fd);
   static void eraseBuffer(int fd);
 
-  enum class method {
-    GET,
-    HEAD,
-  };
-
-  static inline std::map<std::string_view, method> const methodStrings = {
-      {"GET", method::GET},
-      {"HEAD", method::HEAD},
-  };
-
-  method method;
   std::filesystem::path uri;
   std::optional<std::variant<std::string, chunkedBody>> body;
   bool completed = false;
@@ -125,6 +118,41 @@ class httpResponse : public httpMessage {
 public:
   httpResponse() = default;
   ~httpResponse() = default;
+
+  // inline static std::unordered_set<std::string_view> const MIMEtypes{
+  //     "text/html",       "text/plain",
+  //     "image/jpeg",      "image/png",
+  //     "image/gif",       "application/json",
+  //     "application/xml", "application/octet-stream"};
+  //
+  inline static std::unordered_map<std::string_view, std::string_view> const
+      extensionMap{{"html", "text/html"},
+                   {"txt", "text/plain"},
+                   {"jpeg", "image/jpeg"},
+                   {"jpg", "image/jpeg"},
+                   {"png", "image/png"},
+                   {"gif", "image/gif"},
+                   {"json", "application/json"},
+                   {"xml", "application/xml"},
+                   {"bin", "application/octet-stream"}};
+
+  static const std::shared_ptr<std::string> notFoundResponse;
+  static const std::shared_ptr<std::string> badRequestResponse;
+  static const std::shared_ptr<std::string> notImplementedResponse;
+
+  /**   @brief Make a response message from the request
+   *    @return shared_ptr to the response message
+   *    @param request: the request message
+   *   @retval
+   *   1) shared_ptr: success
+   */
+  static std::shared_ptr<httpResponse>
+  makeResponse(httpRequest const &, std::filesystem::path const);
+
+  /** @brief Serialize the response message to a string
+   * @return shared_ptr to the string that contains the response message
+   * */
+  std::shared_ptr<std::string> serialize();
 
   std::filesystem::path uri;
 };
@@ -143,24 +171,28 @@ public:
   uncompletedRequest() : std::runtime_error("Uncompleted request") {}
 };
 
-enum class httpErrc {
-  success = 0,
-  badRequest,
-  uncompletedRequest,
-};
-
 inline auto const &httpErrorCode() {
   static struct httpErrorCategory : public std::error_category {
     char const *name() const noexcept override { return "httpError"; }
 
     std::string message(int c) const override {
       switch (static_cast<httpErrc>(c)) {
-      case httpErrc::success:
-        return "Success";
-      case httpErrc::badRequest:
-        return "Bad request";
-      case httpErrc::uncompletedRequest:
-        return "Uncompleted request";
+      case httpErrc::OK:
+        return "OK";
+      case httpErrc::BAD_REQUEST:
+        return "Bad Request";
+      case httpErrc::NOT_FOUND:
+        return "Not Found";
+      case httpErrc::LENTH_REQUIRED:
+        return "Length Required";
+      case httpErrc::INTERNAL_SERVER_ERROR:
+        return "Internal Server Error";
+      case httpErrc::NOT_IMPLEMENTED:
+        return "Not Implemented";
+      case httpErrc::HTTP_VERSION_NOT_SUPPORTED:
+        return "HTTP Version Not Supported";
+      case httpErrc::UNCOMPLETED_REQUEST:
+        return "Uncompleted Request";
       default:
         return "Unknown error";
       }

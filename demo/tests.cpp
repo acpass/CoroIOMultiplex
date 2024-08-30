@@ -2,9 +2,12 @@
 #include "async/Tasks.hpp"
 #include "async/Timer.hpp"
 #include "async/WhenAll.hpp"
+#include "http/Socket.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <print>
+#include <system_error>
 using namespace ACPAcoro;
 using namespace std::chrono_literals;
 
@@ -27,17 +30,11 @@ Task<int, yieldPromiseType<int>> run3times() {
   co_return 3;
 }
 
-ACPAcoro::Task<int> get_value() {
-  co_return 42;
-}
+ACPAcoro::Task<int> get_value() { co_return 42; }
 
-Task<int> get_42() {
-  co_return 42;
-}
+Task<int> get_42() { co_return 42; }
 
-Task<double> get_3_14() {
-  co_return 3.14;
-}
+Task<double> get_3_14() { co_return 3.14; }
 
 Task<> hello() {
   std::println("Hello");
@@ -84,14 +81,26 @@ ACPAcoro::Task<> co_main() {
   co_return;
 }
 
-int main() {
-  auto task = co_main();
-  std::println("co_main() started");
-  loopInstance::getInstance().addTask(task);
-  while (!task.selfCoro.done()) {
-    loopInstance::getInstance().runAll();
-  }
+void fstest() {
+  std::filesystem::path path("/../../../test/././tsfw/./..");
+  std::error_code ec{};
+  std::println("path: {}", path.string());
+  auto realpath = std::filesystem::weakly_canonical(path, ec);
+  println("real path: {}", realpath.string());
+  println("error code: {}", ec.message());
+}
 
-  std::println("co_main() ended");
+int main() {
+  // auto task = co_main();
+  // std::println("co_main() started");
+  // loopInstance::getInstance().addTask(task);
+  // while (!task.selfCoro.done()) {
+  //   loopInstance::getInstance().runAll();
+  // }
+  //
+  // std::println("co_main() ended");
+  //
+  fstest();
+
   return 0;
 }

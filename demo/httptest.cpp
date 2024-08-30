@@ -59,14 +59,14 @@ Task<int, yieldPromiseType<int>> responseHandler(
   if (status == httpResponse::statusCode::OK) {
     // std::println("Handling request from socket {}", socket->fd);
     std::println("Request: {}", request->uri.string());
-    std::println("Status: {}", httpResponse::statusStrings.at(status));
+    std::println("Status: {}", httpErrorCode().message((int)status));
     std::println("Headers: ");
     for (auto &[key, value] : request->headers.data) {
       std::println("  {}: {}", key, value);
     }
   } else {
     std::println("Handling error from socket {}", socket->fd);
-    std::println("Status: {}", httpResponse::statusStrings.at(status));
+    std::println("Status: {}", httpErrorCode().message((int)status));
   }
   co_return 0;
 }
@@ -98,13 +98,13 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             // if the request is uncompleted, ignore it
             // otherwise, return the error
             .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
-              if (e == make_error_code(httpErrc::badRequest)) {
+              if (e == make_error_code(httpErrc::BAD_REQUEST)) {
                 // std::println("Bad request");
                 auto responseTask = responseHandler(
                     socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
                 loopInstance::getInstance().addTask(responseTask.detach());
               } else if (e != make_error_code(socketError::eofError) &&
-                         e != make_error_code(httpErrc::uncompletedRequest)) {
+                         e != make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
                 // std::println("Internal server error");
                 // std::println("Error: {}", e.message());
                 auto responseTask = responseHandler(
@@ -118,7 +118,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
 
     if (!requestResult) {
       if (requestResult.error() ==
-          make_error_code(httpErrc::uncompletedRequest)) {
+          make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
         return {};
       }
       return tl::unexpected(requestResult.error());
