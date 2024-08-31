@@ -70,17 +70,29 @@ Task<int, yieldPromiseType<int>> responseHandler(
       }
     } // send success
   }
-
-  auto file = regularFile::open(response->uri);
-  if (!file) {
-    std::println("Error: {}", file.error().message());
-    co_return {};
+  std::shared_ptr<regularFile> file;
+  while (true) {
+    auto openResult = regularFile::open(response->uri);
+    if (!openResult) {
+      if (openResult.error() ==
+              make_error_code(std::errc::too_many_files_open) ||
+          openResult.error() ==
+              make_error_code(std::errc::too_many_files_open_in_system)) {
+        co_yield {};
+      } else {
+        println("Error: {}", openResult.error().message());
+        co_return {};
+      }
+    } else {
+      file = openResult.value();
+      break;
+    }
   }
 
   while (response->method != ACPAcoro::httpMessage::method::HEAD && true) {
     size_t totalsend = 0;
-    auto size = file.value()->size;
-    auto sendResult = socket->sendfile(file.value()->fd, size);
+    auto size = file->size;
+    auto sendResult = socket->sendfile(file->fd, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -98,7 +110,7 @@ Task<int, yieldPromiseType<int>> responseHandler(
     else {
       totalsend += sendResult.value();
       size -= sendResult.value();
-      if (totalsend >= file.value()->size) {
+      if (totalsend >= file->size) {
         break;
       }
     } // send success

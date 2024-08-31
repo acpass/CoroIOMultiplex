@@ -3,5 +3,5 @@
 	url = https://github.com/TartanLlama/expected.git
 
 [submodule "perf/epollperf"]
-  path = perf/epollperf
-  url = https://github.com/haraldh/rust_echo_bench.git
+	path = perf/epollperf
+	url = https://github.com/haraldh/rust_echo_bench.git

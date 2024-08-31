@@ -18,20 +18,12 @@ struct returnPrevAwaiter {
 
   // return to previous coroutine if exists
   // else suspend always (return a noop coroutine)
-  auto await_suspend(std::coroutine_handle<> coro) const noexcept
+  auto await_suspend(std::coroutine_handle<>) const noexcept
       -> std::coroutine_handle<> {
     if (detached.test(std::memory_order::relaxed) &&
         ended.test(std::memory_order::relaxed)) {
       // it's the resumer's responsibility to destroy the coroutine
-      // TODO: find a way to suspend the coroutine in this branch
-      // add a done table in the loopInstance
       //
-      // coro.destroy();
-      decltype(loopInstance::getInstance().runningTasks)::accessor accessor;
-      if (loopInstance::getInstance().runningTasks.find(accessor, coro)) {
-        accessor->second = 1;
-        accessor.release();
-      }
       return std::noop_coroutine();
     }
 

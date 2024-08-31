@@ -83,14 +83,11 @@ public:
 
       task.first.resume();
 
-      decltype(runningTasks)::accessor accessor;
-      runningTasks.find(accessor, task.first);
-      auto done = accessor->second;
-      accessor.release();
-
       runningTasks.erase(task.first);
 
-      if (task.second && !done) {
+      if (task.first.done()) {
+        task.first.destroy();
+      } else if (task.second) {
         addTask(task.first, true);
       }
     }

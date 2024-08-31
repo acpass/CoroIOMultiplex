@@ -215,7 +215,8 @@ inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
   while (true) {
     int clientfd = accept(server.fd, (sockaddr *)&addr, &addrlen);
     if (clientfd < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EMFILE ||
+          errno == ENFILE) {
         // epoll_event event;
         // event.events   = EPOLLIN | EPOLLONESHOT;
         // event.data.ptr = (co_await getSelfAwaiter()).address();
@@ -223,7 +224,7 @@ inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
         co_yield {};
         continue;
       } else {
-        throw std::error_code(errno, std::system_category());
+        throw std::system_error(errno, std::system_category());
       }
     }
     auto client = std::make_shared<reactorSocket>(clientfd);
