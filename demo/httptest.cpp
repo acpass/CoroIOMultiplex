@@ -24,7 +24,7 @@
 using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
-const std::filesystem::path webroot{"/home/acpass/www/"};
+std::filesystem::path webroot{"/home/acpass/www/"};
 
 // char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
 //                           "Content-Length: 13\r\n"
@@ -236,6 +236,11 @@ int main(int argc, char *argv[]) {
   } else {
     port = argv[1];
   }
+
+  if (argc >= 3) {
+    webroot = argv[2];
+  }
+
   auto mainTask = co_main(port);
   loopInstance::getInstance().addTask(mainTask);
   while (!mainTask.selfCoro.done()) {

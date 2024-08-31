@@ -276,8 +276,15 @@ httpResponse::makeResponse(httpRequest const &request,
   }
 
   std::string extension = response->uri.extension().string().substr(1);
+
+  // ignore args because it's temporaryly a static server
+  auto argPos = extension.find('?');
+  if (argPos != std::string::npos) {
+    extension = extension.substr(0, argPos);
+  }
   // std::println("Extension: {}", extension);
   if (!extensionMap.contains(extension)) {
+    println("Extension not found: {}", extension);
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
   }
@@ -303,7 +310,7 @@ httpResponse::makeResponse(httpRequest const &request,
   std::error_code ec{};
   auto realPath =
       std::filesystem::canonical(webRoot / response->uri.relative_path(), ec);
-  println("Real path: {}", realPath.string());
+  // println("Real path: {}", realPath.string());
   if (ec.value() != 0) {
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;

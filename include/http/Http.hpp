@@ -126,15 +126,26 @@ public:
   //     "application/xml", "application/octet-stream"};
   //
   inline static std::unordered_map<std::string_view, std::string_view> const
-      extensionMap{{"html", "text/html"},
-                   {"txt", "text/plain"},
-                   {"jpeg", "image/jpeg"},
-                   {"jpg", "image/jpeg"},
-                   {"png", "image/png"},
-                   {"gif", "image/gif"},
-                   {"json", "application/json"},
-                   {"xml", "application/xml"},
-                   {"bin", "application/octet-stream"}};
+      extensionMap{
+          {"html", "text/html"},
+          {"txt", "text/plain"},
+          {"jpeg", "image/jpeg"},
+          {"jpg", "image/jpeg"},
+          {"png", "image/png"},
+          {"gif", "image/gif"},
+          {"json", "application/json"},
+          {"xml", "application/xml"},
+          {"bin", "application/octet-stream"},
+          {"css", "text/css"},
+          {"js", "application/javascript"},
+          {"webp", "image/webp"},
+          {"ico", "image/x-icon"},
+          {"svg", "image/svg+xml"},
+          {"pdf", "application/pdf"},
+          {"zip", "application/zip"},
+          {"woff", "application/font-woff"},
+          {"woff2", "application/font-woff2"},
+      };
 
   static const std::shared_ptr<std::string> notFoundResponse;
   static const std::shared_ptr<std::string> badRequestResponse;
