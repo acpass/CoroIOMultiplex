@@ -12,6 +12,7 @@
 #include <oneapi/tbb/detail/_task.h>
 #include <print>
 #include <set>
+#include <shared_mutex>
 #include <stdexcept>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_queue.h>
@@ -42,6 +43,9 @@ public:
   // bool indicate end flag
   tbb::concurrent_hash_map<std::coroutine_handle<>, bool> runningTasks;
 
+  tbb::concurrent_set<std::coroutine_handle<>> doneTasks;
+  std::shared_mutex doneDestructLock;
+
   std::mutex tasksMutex;
   std::condition_variable_any tasksCV;
 
@@ -62,7 +66,11 @@ public:
   }
 
   void runTasks() {
+    size_t runcount = 0;
     while (!readyTasks.empty()) {
+      if (runcount++ > 1000) {
+        break;
+      }
 
       std::pair<std::coroutine_handle<>, bool> task;
       // atomic operation
@@ -77,19 +85,41 @@ public:
 
         // if the task is already running
         // put it back to the queue
-        readyTasks.emplace(task);
+        if (!doneTasks.contains(task.first))
+          readyTasks.emplace(task);
         continue;
       }
 
-      task.first.resume();
+      // check before resume to avoid double resume
+      if (!doneTasks.contains(task.first)) {
+        task.first.resume();
 
+        if (task.first.done()) {
+          {
+            std::shared_lock<std::shared_mutex> lock(doneDestructLock);
+            doneTasks.insert(task.first);
+          }
+          runningTasks.erase(task.first);
+          continue;
+        }
+
+      } else {
+        runningTasks.erase(task.first);
+        continue;
+      }
+
+      // check after resume to achieve delayed destruction
       runningTasks.erase(task.first);
 
-      if (task.first.done()) {
-        task.first.destroy();
-      } else if (task.second) {
+      if (task.second) {
         addTask(task.first, true);
       }
+    }
+
+    std::unique_lock<std::shared_mutex> lock(doneDestructLock);
+    for (auto &c : doneTasks) {
+      c.destroy();
+      doneTasks.unsafe_erase(c);
     }
   }
 

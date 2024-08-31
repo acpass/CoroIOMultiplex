@@ -169,6 +169,7 @@ httpRequest::parseHeaders(std::string_view &request) {
 
 tl::expected<void, std::error_code>
 httpRequest::parseFirstLine(std::string_view &request) {
+
   this->status = httpMessage::statusCode::OK;
   // find the end of the request line
   size_t pos = request.find("\r\n");
@@ -312,8 +313,6 @@ httpResponse::makeResponse(httpRequest const &request,
   // println("[{}]: Real path: {}", std::chrono::utc_clock::now(),
   // realPath.string());
   if (ec.value() != 0) {
-    std::println("[{}]: wrong Path: {}", std::chrono::utc_clock::now(),
-                 response->uri.string());
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
   }
