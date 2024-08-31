@@ -1,5 +1,6 @@
 
 #include "http/Http.hpp"
+#include "file/File.hpp"
 
 #include "tl/expected.hpp"
 
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <http/Socket.hpp>
 #include <memory>
 #include <memory_resource>
@@ -22,52 +24,70 @@
 using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
-char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
-                          "Content-Length: 13\r\n"
-                          "Content-Type: text/html\r\n"
-                          "Cache-Control: no-cache\r\n\r\n"
-                          "hello world\r\n"};
-size_t const dummyResponseSize = strlen(dummyResponse);
+const std::filesystem::path webroot{"/home/acpass/www/"};
 
-char const *badRequestResponse{"HTTP/1.1 400 Bad Request\r\n"
-                               "Content-Length: 0\r\n"};
-size_t const badRequestResponseSize = strlen(badRequestResponse);
-
+// char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
+//                           "Content-Length: 13\r\n"
+//                           "Content-Type: text/html\r\n"
+//                           "Cache-Control: no-cache\r\n\r\n"
+//                           "hello world\r\n"};
+// size_t const dummyResponseSize = strlen(dummyResponse);
+//
+// char const *badRequestResponse{"HTTP/1.1 400 Bad Request\r\n"
+//                                "Content-Length: 0\r\n"};
+// size_t const badRequestResponseSize = strlen(badRequestResponse);
+//
 Task<int, yieldPromiseType<int>> responseHandler(
     std::shared_ptr<reactorSocket> socket, std::shared_ptr<httpRequest> request,
     httpResponse::statusCode status = httpResponse::statusCode::OK) {
+
+  request->status = status;
+  auto response = httpResponse::makeResponse(*request, webroot);
+  auto responseStr = response->serialize();
+  socket->send(responseStr->data(), responseStr->size())
+      .and_then(
+          [&](int)
+              -> tl::expected<std::shared_ptr<regularFile>, std::error_code> {
+            return regularFile::open(response->uri);
+          })
+      .and_then([&](auto file) -> tl::expected<int, std::error_code> {
+        return socket->sendfile(file->fd, NULL, file->size);
+      })
+      .map_error(
+          [&](auto const &e) { std::println("Error: {}", e.message()); });
+
   // response to the client
   // httpResponse response{};
-  std::println("Handling response from socket {}", socket->fd);
-  if (status == httpResponse::statusCode::OK) {
-
-    socket->send(dummyResponse, dummyResponseSize)
-        .map_error([&](auto const &e) {
-          std::println("Error: {}", e.message());
-          return e;
-        });
-  }
-  // response a bad request or internal server error
-  else {
-    socket->send(badRequestResponse, badRequestResponseSize)
-        .map_error([&](auto const &e) {
-          std::println("Error: {}", e.message());
-          return e;
-        });
-  }
-
-  if (status == httpResponse::statusCode::OK) {
-    // std::println("Handling request from socket {}", socket->fd);
-    std::println("Request: {}", request->uri.string());
-    std::println("Status: {}", httpErrorCode().message((int)status));
-    std::println("Headers: ");
-    for (auto &[key, value] : request->headers.data) {
-      std::println("  {}: {}", key, value);
-    }
-  } else {
-    std::println("Handling error from socket {}", socket->fd);
-    std::println("Status: {}", httpErrorCode().message((int)status));
-  }
+  // std::println("Handling response from socket {}", socket->fd);
+  // if (status == httpResponse::statusCode::OK) {
+  //
+  //   socket->send(dummyResponse, dummyResponseSize)
+  //       .map_error([&](auto const &e) {
+  //         std::println("Error: {}", e.message());
+  //         return e;
+  //       });
+  // }
+  // // response a bad request or internal server error
+  // else {
+  //   socket->send(badRequestResponse, badRequestResponseSize)
+  //       .map_error([&](auto const &e) {
+  //         std::println("Error: {}", e.message());
+  //         return e;
+  //       });
+  // }
+  //
+  // if (status == httpResponse::statusCode::OK) {
+  //   // std::println("Handling request from socket {}", socket->fd);
+  //   std::println("Request: {}", request->uri.string());
+  //   std::println("Status: {}", httpErrorCode().message((int)status));
+  //   std::println("Headers: ");
+  //   for (auto &[key, value] : request->headers.data) {
+  //     std::println("  {}: {}", key, value);
+  //   }
+  // } else {
+  //   std::println("Handling error from socket {}", socket->fd);
+  //   std::println("Status: {}", httpErrorCode().message((int)status));
+  // }
   co_return 0;
 }
 
@@ -184,7 +204,6 @@ void runTasks() {
 }
 
 Task<> co_main(std::string const &port) {
-
   auto server = std::make_shared<serverSocket>(port);
 
   server->listen();

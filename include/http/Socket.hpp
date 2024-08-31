@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <sys/epoll.h>
 #include <sys/select.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <system_error>
@@ -161,6 +162,13 @@ struct reactorSocket : public socketBase {
       return tl::unexpected(make_error_code(socketError::sendError));
     }
     return checkError(::send(fd, buffer, size, 0));
+  }
+  tl::expected<int, std::error_code> sendfile(int in_fd, off_t *offset,
+                                              size_t count) {
+    if (fd < 0) {
+      return tl::unexpected(make_error_code(socketError::sendError));
+    }
+    return checkError(::sendfile(fd, in_fd, offset, count));
   }
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
 

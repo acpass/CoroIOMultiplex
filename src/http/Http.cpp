@@ -246,6 +246,8 @@ std::shared_ptr<httpResponse>
 httpResponse::makeResponse(httpRequest const &request,
                            std::filesystem::path const webRoot) {
 
+  // std::println("webRoot: {}", webRoot.string());
+
   auto response = std::make_shared<httpResponse>();
   if (request.status != httpMessage::statusCode::OK) {
     response->status = request.status;
@@ -262,12 +264,19 @@ httpResponse::makeResponse(httpRequest const &request,
   response->uri = std::filesystem::weakly_canonical(request.uri);
   auto &requestHeaders = request.headers.data;
 
+  if (!response->uri.has_relative_path()) {
+    response->uri /= "index.html";
+  }
+
+  // println("Request uri: {}", response->uri.string());
+
   if (!response->uri.has_extension()) {
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
   }
 
-  std::string extension = response->uri.extension().string();
+  std::string extension = response->uri.extension().string().substr(1);
+  // std::println("Extension: {}", extension);
   if (!extensionMap.contains(extension)) {
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
@@ -292,7 +301,9 @@ httpResponse::makeResponse(httpRequest const &request,
   }
 
   std::error_code ec{};
-  auto realPath = std::filesystem::canonical(webRoot / response->uri, ec);
+  auto realPath =
+      std::filesystem::canonical(webRoot / response->uri.relative_path(), ec);
+  println("Real path: {}", realPath.string());
   if (ec.value() != 0) {
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
@@ -304,6 +315,8 @@ httpResponse::makeResponse(httpRequest const &request,
     response->status = httpMessage::statusCode::INTERNAL_SERVER_ERROR;
     return response;
   }
+
+  response->uri = realPath;
 
   response->headers.data.emplace("Content-Length",
                                  std::to_string(Content_Length));
