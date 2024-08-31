@@ -19,6 +19,7 @@
 #include <sys/epoll.h>
 #include <system_error>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 using namespace ACPAcoro;
@@ -44,18 +45,64 @@ Task<int, yieldPromiseType<int>> responseHandler(
   request->status = status;
   auto response = httpResponse::makeResponse(*request, webroot);
   auto responseStr = response->serialize();
-  socket->send(responseStr->data(), responseStr->size())
-      .and_then(
-          [&](int)
-              -> tl::expected<std::shared_ptr<regularFile>, std::error_code> {
-            return regularFile::open(response->uri);
-          })
-      .and_then([&](auto file) -> tl::expected<int, std::error_code> {
-        return socket->sendfile(file->fd, NULL, file->size);
-      })
-      .map_error(
-          [&](auto const &e) { std::println("Error: {}", e.message()); });
 
+  while (true) {
+    size_t totalsend = 0;
+    auto sendResult = socket->send(responseStr->data(), responseStr->size());
+
+    if (!sendResult) {
+      if (sendResult.error() ==
+              std::make_error_code(std::errc::resource_unavailable_try_again) ||
+          sendResult.error() ==
+              make_error_code(std::errc::no_message_available)) {
+        co_yield {};
+      } else {
+        std::println("Error: {}", sendResult.error().message());
+        co_return {};
+      }
+
+    } // error handle
+
+    else {
+      totalsend += sendResult.value();
+      if (totalsend >= responseStr->size()) {
+        break;
+      }
+    } // send success
+  }
+
+  auto file = regularFile::open(response->uri);
+  if (!file) {
+    std::println("Error: {}", file.error().message());
+    co_return {};
+  }
+
+  while (response->method != ACPAcoro::httpMessage::method::HEAD && true) {
+    size_t totalsend = 0;
+    auto size = file.value()->size;
+    auto sendResult = socket->sendfile(file.value()->fd, size);
+
+    if (!sendResult) {
+      if (sendResult.error() ==
+              std::make_error_code(std::errc::resource_unavailable_try_again) ||
+          sendResult.error() ==
+              make_error_code(std::errc::no_message_available)) {
+        co_yield {};
+      } else {
+        std::println("Error: {}", sendResult.error().message());
+        co_return {};
+      }
+
+    } // error handle
+
+    else {
+      totalsend += sendResult.value();
+      size -= sendResult.value();
+      if (totalsend >= file.value()->size) {
+        break;
+      }
+    } // send success
+  }
   // response to the client
   // httpResponse response{};
   // std::println("Handling response from socket {}", socket->fd);
@@ -111,7 +158,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             .and_then([&]() -> tl::expected<void, std::error_code> {
               // std::println("Adding response task");
               auto responseTask = responseHandler(socket, request);
-              loopInstance::getInstance().addTask(responseTask.detach());
+              loopInstance::getInstance().addTask(responseTask.detach(), true);
               return {};
             })
             // error handle phase
@@ -122,7 +169,8 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
                 // std::println("Bad request");
                 auto responseTask = responseHandler(
                     socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
-                loopInstance::getInstance().addTask(responseTask.detach());
+                loopInstance::getInstance().addTask(responseTask.detach(),
+                                                    true);
               } else if (e != make_error_code(socketError::eofError) &&
                          e != make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
                 // std::println("Internal server error");
@@ -130,7 +178,8 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
                 auto responseTask = responseHandler(
                     socket, nullptr,
                     httpResponse::statusCode::INTERNAL_SERVER_ERROR);
-                loopInstance::getInstance().addTask(responseTask.detach());
+                loopInstance::getInstance().addTask(responseTask.detach(),
+                                                    true);
               }
 
               return tl::unexpected(e);
@@ -219,7 +268,7 @@ Task<> co_main(std::string const &port) {
   loop.addTask(epollWaitEvent().detach(), true);
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 3; _++) {
+  for (int _ = 0; _ < 15; _++) {
     threads.emplace_back(runTasks);
   }
 

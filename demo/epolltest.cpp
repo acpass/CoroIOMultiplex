@@ -25,8 +25,7 @@
 using namespace ACPAcoro;
 
 std::pmr::synchronized_pool_resource poolResource{
-    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}
-};
+    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}};
 // bufferPool<char, 1024> bufferPoolInstance;
 
 struct readBuffer {
@@ -38,20 +37,39 @@ void pooltest() {
       std::pmr::polymorphic_allocator<int>(&poolResource), 40);
 }
 
-Task<> writer(std::shared_ptr<reactorSocket> socket,
-              // std::span<char> buffer,
-              // char *buffer,
-              std::shared_ptr<readBuffer> buffer,
-              size_t size) {
+Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
+                                        // std::span<char> buffer,
+                                        // char *buffer,
+                                        std::shared_ptr<readBuffer> buffer,
+                                        size_t size) {
   // std::println("Writing to socket {}", socket->fd);
-  socket->send(buffer->buffer, size);
-  // bufferPoolInstance.returnBuffer(buffer);
-  // delete[] buffer;
-  co_return;
+  while (true) {
+    size_t written = 0;
+    auto sendResult = socket->send(buffer->buffer + written, size);
+    if (!sendResult) {
+      if (sendResult.error() ==
+              make_error_code(std::errc::resource_unavailable_try_again) ||
+          sendResult.error() ==
+              make_error_code(std::errc::operation_would_block)) {
+        co_yield {};
+      } else {
+        std::println("Error: {}", sendResult.error().message());
+        co_return {};
+      }
+    } else {
+      written += sendResult.value();
+      size -= sendResult.value();
+      if (written >= size) {
+        co_return {};
+      }
+    }
+    // bufferPoolInstance.returnBuffer(buffer);
+    // delete[] buffer;
+  }
 }
-
 // bug: if the client finish sending, but do not close the connection
-// the server will create the last writer task, and yield to wait for the epoll
+// the server will create the last writer task, and yield to wait for the
+// epoll
 tl::expected<void, std::error_code>
 echoHandle(std::shared_ptr<reactorSocket> socket) {
   // char buffer[1024];
@@ -70,7 +88,7 @@ echoHandle(std::shared_ptr<reactorSocket> socket) {
             })
             .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
               loopInstance::getInstance().addTask(
-                  writer(socket, buffer, readCnt).detach());
+                  writer(socket, buffer, readCnt).detach(), true);
 
               return readCnt;
             });
@@ -100,7 +118,7 @@ Task<> co_main() {
   std::println("Listening on port 12312");
   auto waitTask = epollWaitEvent();
   epoll_event event;
-  event.events   = EPOLLIN;
+  event.events = EPOLLIN;
   event.data.ptr = acceptAll(server, echoHandle).detach().address();
   try {
     epoll.addEvent(server.fd, &event);
@@ -110,7 +128,7 @@ Task<> co_main() {
   }
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 3; _++) {
+  for (int _ = 0; _ < 15; _++) {
     threads.emplace_back(runTasks);
   }
 

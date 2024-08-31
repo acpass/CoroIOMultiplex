@@ -37,8 +37,10 @@ public:
     bool operator<(timerEvent const &other) const { return time < other.time; }
   };
 
+  // bool indicate self_refreshing
   tbb::concurrent_queue<std::pair<std::coroutine_handle<>, bool>> readyTasks;
-  tbb::concurrent_hash_map<std::coroutine_handle<>, int> runningTasks;
+  // bool indicate end flag
+  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> runningTasks;
 
   std::mutex tasksMutex;
   std::condition_variable_any tasksCV;
@@ -63,21 +65,32 @@ public:
     while (!readyTasks.empty()) {
 
       std::pair<std::coroutine_handle<>, bool> task;
+      // atomic operation
+      // if the queue is empty
+      // continue
       if (!readyTasks.try_pop(task)) {
         continue;
       }
 
-      if (!runningTasks.insert({task.first, 0})) {
+      // atomic
+      if (!runningTasks.insert({task.first, false})) {
 
+        // if the task is already running
+        // put it back to the queue
         readyTasks.emplace(task);
         continue;
       }
 
       task.first.resume();
 
+      decltype(runningTasks)::accessor accessor;
+      runningTasks.find(accessor, task.first);
+      auto done = accessor->second;
+      accessor.release();
+
       runningTasks.erase(task.first);
 
-      if (task.second && !task.first.done()) {
+      if (task.second && !done) {
         addTask(task.first, true);
       }
     }

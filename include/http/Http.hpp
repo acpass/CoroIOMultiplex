@@ -145,6 +145,7 @@ public:
           {"zip", "application/zip"},
           {"woff", "application/font-woff"},
           {"woff2", "application/font-woff2"},
+          {"pf_meta", "application/octet-stream"},
       };
 
   static const std::shared_ptr<std::string> notFoundResponse;

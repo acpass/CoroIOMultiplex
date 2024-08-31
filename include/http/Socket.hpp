@@ -163,13 +163,14 @@ struct reactorSocket : public socketBase {
     }
     return checkError(::send(fd, buffer, size, 0));
   }
-  tl::expected<int, std::error_code> sendfile(int in_fd, off_t *offset,
-                                              size_t count) {
+  tl::expected<int, std::error_code> sendfile(int in_fd, size_t count) {
     if (fd < 0) {
       return tl::unexpected(make_error_code(socketError::sendError));
     }
-    return checkError(::sendfile(fd, in_fd, offset, count));
+
+    return checkError(::sendfile(fd, in_fd, nullptr, count));
   }
+
   reactorSocket(reactorSocket &&other) : socketBase(std::move(other)) {}
 
   // static tbb::concurrent_hash_map<std::weak_ptr<reactorSocket>,

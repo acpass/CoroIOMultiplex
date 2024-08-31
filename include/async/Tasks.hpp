@@ -1,5 +1,6 @@
 #pragma once
 
+#include "async/Loop.hpp"
 #include <atomic>
 #include <coroutine>
 #include <exception>
@@ -21,7 +22,16 @@ struct returnPrevAwaiter {
       -> std::coroutine_handle<> {
     if (detached.test(std::memory_order::relaxed) &&
         ended.test(std::memory_order::relaxed)) {
-      coro.destroy();
+      // it's the resumer's responsibility to destroy the coroutine
+      // TODO: find a way to suspend the coroutine in this branch
+      // add a done table in the loopInstance
+      //
+      // coro.destroy();
+      decltype(loopInstance::getInstance().runningTasks)::accessor accessor;
+      if (loopInstance::getInstance().runningTasks.find(accessor, coro)) {
+        accessor->second = 1;
+        accessor.release();
+      }
       return std::noop_coroutine();
     }
 
@@ -34,18 +44,16 @@ struct returnPrevAwaiter {
 
   void await_resume() const noexcept {}
 
-  returnPrevAwaiter(bool endedFlag,
-                    bool detachFlag,
+  returnPrevAwaiter(bool endedFlag, bool detachFlag,
                     std::coroutine_handle<> prevCoro)
       : ended(endedFlag), detached(detachFlag), prevCoro(prevCoro) {}
 
-  std::atomic_flag ended           = ATOMIC_FLAG_INIT;
-  std::atomic_flag detached        = ATOMIC_FLAG_INIT;
+  std::atomic_flag ended = ATOMIC_FLAG_INIT;
+  std::atomic_flag detached = ATOMIC_FLAG_INIT;
   std::coroutine_handle<> prevCoro = nullptr;
 };
 
-template <typename T>
-class promiseType;
+template <typename T> class promiseType;
 
 template <typename T = void, typename P = promiseType<T>>
 class [[nodiscard]] Task {
@@ -103,7 +111,7 @@ public:
   std::coroutine_handle<> detach() {
     selfCoro.promise().detached.test_and_set(std::memory_order::relaxed);
     auto coro = selfCoro;
-    selfCoro  = nullptr;
+    selfCoro = nullptr;
     return coro;
   }
 
@@ -135,12 +143,11 @@ public:
   }
 
   std::exception_ptr returnException = nullptr;
-  std::atomic_flag detached          = ATOMIC_FLAG_INIT;
-  std::coroutine_handle<> prevCoro   = nullptr;
+  std::atomic_flag detached = ATOMIC_FLAG_INIT;
+  std::coroutine_handle<> prevCoro = nullptr;
 };
 
-template <typename T = void>
-class promiseType : public promiseBase {
+template <typename T = void> class promiseType : public promiseBase {
 public:
   Task<T> get_return_object() noexcept {
     return Task<T>{std::coroutine_handle<promiseType>::from_promise(*this)};
@@ -159,8 +166,7 @@ public:
   T returnValue;
 };
 
-template <>
-class promiseType<void> : public promiseBase {
+template <> class promiseType<void> : public promiseBase {
 
 public:
   Task<void> get_return_object() noexcept {
@@ -209,8 +215,7 @@ struct retPrevPromiseType : public promiseBase {
   void return_value(std::coroutine_handle<> coro) noexcept { prevCoro = coro; }
 };
 
-template <typename T>
-struct yieldPromiseType : public promiseBase {
+template <typename T> struct yieldPromiseType : public promiseBase {
   Task<T, yieldPromiseType<T>> get_return_object() noexcept {
     return Task<T, yieldPromiseType>{
         std::coroutine_handle<yieldPromiseType>::from_promise(*this)};
@@ -218,8 +223,8 @@ struct yieldPromiseType : public promiseBase {
 
   auto yield_value(T v) noexcept {
     returnValue = v;
-    return returnPrevAwaiter{
-        false, detached.test(std::memory_order::relaxed), prevCoro};
+    return returnPrevAwaiter{false, detached.test(std::memory_order::relaxed),
+                             prevCoro};
   }
 
   T &getValue() {

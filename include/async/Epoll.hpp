@@ -37,8 +37,8 @@ struct epollInstance {
 
   void operator=(epollInstance &&) = delete;
 
-  int epfd                         = epoll_create1(0);
-  static constexpr int maxevents   = 64;
+  int epfd = epoll_create1(0);
+  static constexpr int maxevents = 64;
 
 private:
   epollInstance() = default;
@@ -47,7 +47,7 @@ private:
 // Wait for an event to occur on the epoll instance and add the task to the loop
 inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
   auto &epoll = epollInstance::getInstance();
-  auto &loop  = loopInstance::getInstance();
+  auto &loop = loopInstance::getInstance();
   epoll_event events[epollInstance::maxevents];
   while (true) {
     // std::println("start epollWaitEvent");
@@ -57,7 +57,8 @@ inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
     for (auto i : std::ranges::views::iota(0, fds)) {
       // std::println("epollWaitEvent: fd: {}", events[i].data.fd);
       // std::println("epollWaitEvent: events: {}", events[i].events);
-      loop.addTask(std::coroutine_handle<>::from_address(events[i].data.ptr));
+      loop.addTask(std::coroutine_handle<>::from_address(events[i].data.ptr),
+                   false);
     }
     // std::println("finished epollWaitEvent");
     co_yield {};

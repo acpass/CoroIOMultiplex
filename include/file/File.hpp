@@ -19,12 +19,11 @@ public:
       return tl::make_unexpected(
           std::error_code(errno, std::system_category()));
     }
-    file->size = ::lseek(file->fd, 0, SEEK_END);
+    file->size = std::filesystem::file_size(path);
     if (file->size < 0) {
       return tl::make_unexpected(
           std::error_code(errno, std::system_category()));
     }
-    ::lseek(file->fd, 0, SEEK_SET);
 
     return file;
   }

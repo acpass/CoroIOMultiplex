@@ -264,7 +264,7 @@ httpResponse::makeResponse(httpRequest const &request,
   response->uri = std::filesystem::weakly_canonical(request.uri);
   auto &requestHeaders = request.headers.data;
 
-  if (!response->uri.has_relative_path()) {
+  if (response->uri.string().ends_with("/")) {
     response->uri /= "index.html";
   }
 
@@ -275,21 +275,20 @@ httpResponse::makeResponse(httpRequest const &request,
     return response;
   }
 
+  auto argsPos = response->uri.string().find('?');
+  if (argsPos != std::string::npos) {
+    response->uri = response->uri.string().substr(0, argsPos);
+  }
+
   std::string extension = response->uri.extension().string().substr(1);
 
-  // ignore args because it's temporaryly a static server
-  auto argPos = extension.find('?');
-  if (argPos != std::string::npos) {
-    extension = extension.substr(0, argPos);
-  }
+  std::string_view MIMEfulltype;
   // std::println("Extension: {}", extension);
   if (!extensionMap.contains(extension)) {
-    println("Extension not found: {}", extension);
-    response->status = httpMessage::statusCode::NOT_FOUND;
-    return response;
+    MIMEfulltype = "application/octet-stream";
+  } else {
+    MIMEfulltype = extensionMap.at(extension);
   }
-
-  std::string_view MIMEfulltype = extensionMap.at(extension);
   std::string MIMEWildcardType{MIMEfulltype.substr(0, MIMEfulltype.find('/'))};
   MIMEWildcardType.append("/*");
 
@@ -310,8 +309,11 @@ httpResponse::makeResponse(httpRequest const &request,
   std::error_code ec{};
   auto realPath =
       std::filesystem::canonical(webRoot / response->uri.relative_path(), ec);
-  // println("Real path: {}", realPath.string());
+  // println("[{}]: Real path: {}", std::chrono::utc_clock::now(),
+  // realPath.string());
   if (ec.value() != 0) {
+    std::println("[{}]: wrong Path: {}", std::chrono::utc_clock::now(),
+                 response->uri.string());
     response->status = httpMessage::statusCode::NOT_FOUND;
     return response;
   }
