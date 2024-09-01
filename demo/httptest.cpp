@@ -38,14 +38,11 @@ std::filesystem::path webroot{"/home/acpass/www/"};
 //                                "Content-Length: 0\r\n"};
 // size_t const badRequestResponseSize = strlen(badRequestResponse);
 //
-Task<int, yieldPromiseType<int>> responseHandler(
-    std::shared_ptr<reactorSocket> socket,
-    std::shared_ptr<httpRequest> request,
-    httpResponse::statusCode status = httpResponse::statusCode::OK) {
+Task<int, yieldPromiseType<int>>
+responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
-  request->status  = status;
-  auto response    = httpResponse::makeResponse(*request, webroot);
-  auto responseStr = response->serialize();
+  httpResponse response(request, webroot);
+  auto responseStr = response.serialize();
 
   while (true) {
     size_t totalsend = 0;
@@ -72,14 +69,15 @@ Task<int, yieldPromiseType<int>> responseHandler(
     } // send success
   }
 
-  if (response->method == ACPAcoro::httpMessage::method::HEAD ||
-      response->status != httpResponse::statusCode::OK) {
+  if (response.method == ACPAcoro::httpMessage::method::HEAD ||
+      response.status != httpResponse::statusCode::OK) {
     co_return 0;
   }
 
-  std::shared_ptr<regularFile> file;
+  regularFile file;
   while (true) {
-    auto openResult = regularFile::open(response->uri);
+    auto openResult = file.open(response.uri);
+
     if (!openResult) {
       if (openResult.error() ==
               make_error_code(std::errc::too_many_files_open) ||
@@ -91,15 +89,15 @@ Task<int, yieldPromiseType<int>> responseHandler(
         co_return {};
       }
     } else {
-      file = openResult.value();
+      // if open successfully, break the loop
       break;
     }
   }
 
   while (true) {
     size_t totalsend = 0;
-    auto size        = file->size;
-    auto sendResult  = socket->sendfile(file->fd, size);
+    auto size        = file.size;
+    auto sendResult  = socket->sendfile(file.fd, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -117,7 +115,7 @@ Task<int, yieldPromiseType<int>> responseHandler(
     else {
       totalsend += sendResult.value();
       size      -= sendResult.value();
-      if (totalsend >= file->size) {
+      if (totalsend >= file.size) {
         break;
       }
     } // send success
@@ -162,21 +160,21 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
   // std::println("Handling socket {}", socket->fd);
 
   while (true) {
-    auto request = std::allocate_shared<httpRequest>(
-        std::pmr::polymorphic_allocator<httpRequest>(&poolResource));
+    httpRequest request;
 
     auto requestResult =
         request
             // read request
-            ->readRequest(*socket)
+            .readRequest(*socket)
             // parse request
             .and_then([&](auto strPtr) -> tl::expected<void, std::error_code> {
-              return request->parseResquest(strPtr);
+              return request.parseResquest(strPtr);
             })
             // add response task
             .and_then([&]() -> tl::expected<void, std::error_code> {
               // std::println("Adding response task");
-              auto responseTask = responseHandler(socket, request);
+              request.status    = httpResponse::statusCode::OK;
+              auto responseTask = responseHandler(socket, std::move(request));
               loopInstance::getInstance().addTask(responseTask.detach(), true);
               return {};
             })
@@ -186,18 +184,15 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
               if (e == make_error_code(httpErrc::BAD_REQUEST)) {
                 // std::println("Bad request");
-                auto responseTask = responseHandler(
-                    socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
+                request.status    = httpResponse::statusCode::BAD_REQUEST;
+                auto responseTask = responseHandler(socket, std::move(request));
                 loopInstance::getInstance().addTask(responseTask.detach(),
                                                     true);
               } else if (e != make_error_code(socketError::eofError) &&
                          e != make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
                 // std::println("Internal server error");
                 // std::println("Error: {}", e.message());
-                auto responseTask = responseHandler(
-                    socket,
-                    nullptr,
-                    httpResponse::statusCode::INTERNAL_SERVER_ERROR);
+                auto responseTask = responseHandler(socket, std::move(request));
                 loopInstance::getInstance().addTask(responseTask.detach(),
                                                     true);
               }
@@ -282,7 +277,7 @@ Task<> co_main(std::string const &port) {
 
   epoll_event event;
   event.events   = EPOLLIN | EPOLLET;
-  event.data.ptr = acceptAll(*server, httpHandle).detach().address();
+  event.data.ptr = acceptAll(server, httpHandle).detach().address();
   epoll.addEvent(server->fd, &event);
 
   loop.addTask(epollWaitEvent().detach(), true);

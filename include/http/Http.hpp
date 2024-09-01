@@ -112,6 +112,11 @@ public:
   static std::shared_ptr<std::string> getBuffer(int fd);
   static void eraseBuffer(int fd);
 
+  httpRequest(httpRequest &&)                 = default;
+  httpRequest &operator=(httpRequest &&)      = default;
+  httpRequest(httpRequest const &)            = delete;
+  httpRequest &operator=(httpRequest const &) = delete;
+
   std::filesystem::path uri{};
   bool completed = false;
 
@@ -163,8 +168,7 @@ public:
    *   @retval
    *   1) shared_ptr: success
    */
-  static std::shared_ptr<httpResponse>
-  makeResponse(httpRequest const &, std::filesystem::path const);
+  httpResponse(httpRequest &, std::filesystem::path const);
 
   /** @brief Serialize the response message to a string
    * @return shared_ptr to the string that contains the response message

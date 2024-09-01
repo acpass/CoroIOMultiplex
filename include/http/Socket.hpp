@@ -210,13 +210,13 @@ handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
   }
 }
 
-inline Task<int, yieldPromiseType<int>> acceptAll(serverSocket &server,
-                                                  handlerType handler) {
+inline Task<int, yieldPromiseType<int>>
+acceptAll(std::shared_ptr<serverSocket> &server, handlerType handler) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
   while (true) {
-    int clientfd = accept(server.fd, (sockaddr *)&addr, &addrlen);
+    int clientfd = accept(server->fd, (sockaddr *)&addr, &addrlen);
     if (clientfd < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EMFILE ||
           errno == ENFILE) {

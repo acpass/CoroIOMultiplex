@@ -40,7 +40,9 @@ std::shared_ptr<std::string> httpRequest::getBuffer(int fd) {
   }
 }
 
-void httpRequest::eraseBuffer(int fd) { uncompletedRequests.erase(fd); }
+void httpRequest::eraseBuffer(int fd) {
+  uncompletedRequests.erase(fd);
+}
 
 // read the request message from the socket
 tl::expected<std::shared_ptr<std::string>, std::error_code>
@@ -218,70 +220,71 @@ httpRequest::parseFirstLine(std::string_view &request) {
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
 
-  this->method = methodStrings.at(method);
-  this->uri = std::move(uri);
+  this->method  = methodStrings.at(method);
+  this->uri     = std::move(uri);
   this->version = std::move(version);
   // std::println("Success to parse the firstline");
   return {};
 }
 
-const std::shared_ptr<std::string> httpResponse::notFoundResponse =
-    std::make_shared<std::string>("HTTP/1.1 404 Not Found\r\n"
-                                  "Content-Length: 0\r\n"
-                                  "\r\n");
+std::shared_ptr<std::string> const httpResponse::notFoundResponse =
+    std::make_shared<std::string>(
+        "HTTP/1.1 404 Not Found\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n");
 
-const std::shared_ptr<std::string> httpResponse::badRequestResponse =
-    std::make_shared<std::string>("HTTP/1.1 400 Bad Request\r\n"
-                                  "Content-Length: 0\r\n"
-                                  "\r\n");
+std::shared_ptr<std::string> const httpResponse::badRequestResponse =
+    std::make_shared<std::string>(
+        "HTTP/1.1 400 Bad Request\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n");
 
-const std::shared_ptr<std::string> httpResponse::notImplementedResponse =
-    std::make_shared<std::string>("HTTP/1.1 501 Not Implemented\r\n"
-                                  "Content-Length: 0\r\n"
-                                  "\r\n");
+std::shared_ptr<std::string> const httpResponse::notImplementedResponse =
+    std::make_shared<std::string>(
+        "HTTP/1.1 501 Not Implemented\r\n"
+        "Content-Length: 0\r\n"
+        "\r\n");
 
 /** TODO
  * 1) if the status is not OK, return the status
  */
-std::shared_ptr<httpResponse>
-httpResponse::makeResponse(httpRequest const &request,
+httpResponse::httpResponse(httpRequest &request,
                            std::filesystem::path const webRoot) {
 
   // std::println("webRoot: {}", webRoot.string());
 
-  auto response = std::make_shared<httpResponse>();
   if (request.status != httpMessage::statusCode::OK) {
-    response->status = request.status;
-    return response;
+    status = request.status;
+    return;
   }
 
   // if (!checkPath(request.uri)) {
   //   return tl::unexpected(make_error_code(httpErrc::NOT_FOUND));
   // }
 
-  response->version = request.version;
-  response->status = request.status;
-  response->method = request.method;
-  response->uri = std::filesystem::weakly_canonical(request.uri);
+  version              = request.version;
+  status               = request.status;
+  method               = request.method;
+  uri                  = std::filesystem::weakly_canonical(request.uri);
   auto &requestHeaders = request.headers.data;
 
-  if (response->uri.string().ends_with("/")) {
-    response->uri /= "index.html";
+  if (uri.string().ends_with("/")) {
+    uri /= "index.html";
   }
 
   // println("Request uri: {}", response->uri.string());
 
-  if (!response->uri.has_extension()) {
-    response->status = httpMessage::statusCode::NOT_FOUND;
-    return response;
+  if (!uri.has_extension()) {
+    status = httpMessage::statusCode::NOT_FOUND;
+    return;
   }
 
-  auto argsPos = response->uri.string().find('?');
+  auto argsPos = uri.string().find('?');
   if (argsPos != std::string::npos) {
-    response->uri = response->uri.string().substr(0, argsPos);
+    uri = uri.string().substr(0, argsPos);
   }
 
-  std::string extension = response->uri.extension().string().substr(1);
+  std::string extension = uri.extension().string().substr(1);
 
   std::string_view MIMEfulltype;
   // std::println("Extension: {}", extension);
@@ -295,43 +298,41 @@ httpResponse::makeResponse(httpRequest const &request,
 
   // check if the client is able to accept this type of file
   if (!requestHeaders.contains("Accept")) {
-    response->status = httpMessage::statusCode::BAD_REQUEST;
-    return response;
+    status = httpMessage::statusCode::BAD_REQUEST;
+    return;
   }
 
-  const std::string_view acceptedMIMEtypes = requestHeaders.at("Accept");
+  std::string_view const acceptedMIMEtypes = requestHeaders.at("Accept");
   if (!acceptedMIMEtypes.find("*/*") &&
       !acceptedMIMEtypes.find(MIMEWildcardType) &&
       !acceptedMIMEtypes.find(MIMEfulltype)) {
-    response->status = httpMessage::statusCode::NOT_FOUND;
-    return response;
+    status = httpMessage::statusCode::NOT_FOUND;
+    return;
   }
 
   std::error_code ec{};
-  auto realPath =
-      std::filesystem::canonical(webRoot / response->uri.relative_path(), ec);
+  auto realPath = std::filesystem::canonical(webRoot / uri.relative_path(), ec);
   // println("[{}]: Real path: {}", std::chrono::utc_clock::now(),
   // realPath.string());
   if (ec.value() != 0) {
-    response->status = httpMessage::statusCode::NOT_FOUND;
-    return response;
+    status = httpMessage::statusCode::NOT_FOUND;
+    return;
   }
 
   auto Content_Length = std::filesystem::file_size(realPath, ec);
 
   if (ec.value() != 0) {
-    response->status = httpMessage::statusCode::INTERNAL_SERVER_ERROR;
-    return response;
+    status = httpMessage::statusCode::INTERNAL_SERVER_ERROR;
+    return;
   }
 
-  response->uri = realPath;
+  uri = realPath;
 
-  response->headers.data.emplace("Content-Length",
-                                 std::to_string(Content_Length));
-  response->headers.data.emplace("Content-Type", MIMEfulltype);
-  response->headers.data.emplace("Catch-Control", "no-cache");
+  headers.data.emplace("Content-Length", std::to_string(Content_Length));
+  headers.data.emplace("Content-Type", MIMEfulltype);
+  headers.data.emplace("Catch-Control", "no-cache");
 
-  return response;
+  return;
 }
 
 std::shared_ptr<std::string> httpResponse::serialize() {
@@ -348,7 +349,9 @@ std::shared_ptr<std::string> httpResponse::serialize() {
 
   default:
     auto response = std::make_shared<std::string>();
-    response->append(std::format("{} {} {}\r\n", version, (int)status,
+    response->append(std::format("{} {} {}\r\n",
+                                 version,
+                                 (int)status,
                                  httpErrorCode().message((int)status)));
     for (auto &headerLine : headers.data) {
       response->append(

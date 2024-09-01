@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tl/expected.hpp"
+
 #include <fcntl.h>
 #include <filesystem>
 #include <system_error>
@@ -11,30 +12,40 @@ namespace ACPAcoro {
 struct regularFile {
 
 public:
-  inline static tl::expected<std::shared_ptr<regularFile>, std::error_code>
-  open(std::filesystem::path const &path) {
-    auto file = std::make_shared<regularFile>();
-    file->fd = ::open(path.c_str(), O_RDONLY);
-    if (file->fd < 0) {
-      return tl::make_unexpected(
-          std::error_code(errno, std::system_category()));
-    }
-    file->size = std::filesystem::file_size(path);
-    if (file->size < 0) {
-      return tl::make_unexpected(
-          std::error_code(errno, std::system_category()));
+  tl::expected<void, std::error_code> open(std::filesystem::path const &path) {
+    if (fd >= 0) {
+      ::close(fd);
     }
 
-    return file;
+    fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+      return tl::make_unexpected(
+          std::error_code(errno, std::system_category()));
+    }
+    size = std::filesystem::file_size(path);
+    if (size < 0) {
+      return tl::make_unexpected(
+          std::error_code(errno, std::system_category()));
+    }
+    return {};
   }
+
+  regularFile() : fd(-1), size(0) {};
+
+  regularFile(regularFile &&other) {
+    fd         = other.fd;
+    size       = other.size;
+    other.fd   = -1;
+    other.size = 0;
+  };
 
   ~regularFile() {
     if (fd >= 0)
       ::close(fd);
   }
 
-  size_t size;
   int fd;
+  size_t size;
 };
 
 } // namespace ACPAcoro

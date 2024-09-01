@@ -25,7 +25,8 @@
 using namespace ACPAcoro;
 
 std::pmr::synchronized_pool_resource poolResource{
-    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}};
+    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}
+};
 // bufferPool<char, 1024> bufferPoolInstance;
 
 struct readBuffer {
@@ -44,7 +45,7 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
                                         size_t size) {
   // std::println("Writing to socket {}", socket->fd);
   while (true) {
-    size_t written = 0;
+    size_t written  = 0;
     auto sendResult = socket->send(buffer->buffer + written, size);
     if (!sendResult) {
       if (sendResult.error() ==
@@ -58,7 +59,7 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
       }
     } else {
       written += sendResult.value();
-      size -= sendResult.value();
+      size    -= sendResult.value();
       if (written >= size) {
         co_return {};
       }
@@ -113,15 +114,15 @@ void runTasks() {
 
 Task<> co_main() {
   auto &epoll = epollInstance::getInstance();
-  auto server = serverSocket("12312");
-  server.listen();
+  auto server = std::make_shared<serverSocket>("12312");
+  server->listen();
   std::println("Listening on port 12312");
   auto waitTask = epollWaitEvent();
   epoll_event event;
-  event.events = EPOLLIN;
+  event.events   = EPOLLIN;
   event.data.ptr = acceptAll(server, echoHandle).detach().address();
   try {
-    epoll.addEvent(server.fd, &event);
+    epoll.addEvent(server->fd, &event);
   } catch (std::error_code const &e) {
     std::println("Error: {}", e.message());
     std::terminate();
