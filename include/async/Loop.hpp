@@ -39,11 +39,11 @@ public:
   };
 
   // bool indicate self_refreshing
-  tbb::concurrent_queue<std::pair<std::coroutine_handle<>, bool>> readyTasks;
+  tbb::concurrent_queue<std::pair<std::coroutine_handle<>, bool>> readyTasks{};
   // bool indicate end flag
-  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> runningTasks;
+  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> runningTasks{};
 
-  tbb::concurrent_set<std::coroutine_handle<>> doneTasks;
+  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> doneTasks{};
   std::shared_mutex doneDestructLock;
 
   std::mutex tasksMutex;
@@ -64,13 +64,14 @@ public:
     timerEventsLock.unlock();
     timerEventsCV.notify_one();
   }
-
+  // TODO: add a big lock to destroy all done tasks in the done task and queue
   void runTasks() {
-    size_t runcount = 0;
+    // size_t runcount = 0;
+
     while (!readyTasks.empty()) {
-      if (runcount++ > 1000) {
-        break;
-      }
+      // if (runcount++ > 1000) {
+      //   break;
+      // }
 
       std::pair<std::coroutine_handle<>, bool> task;
       // atomic operation
@@ -85,27 +86,39 @@ public:
 
         // if the task is already running
         // put it back to the queue
-        if (!doneTasks.contains(task.first))
-          readyTasks.emplace(task);
+        readyTasks.emplace(task);
         continue;
       }
 
-      // check before resume to avoid double resume
-      if (!doneTasks.contains(task.first)) {
+      // wrong code
+
+      //  decltype(doneTasks)::accessor accessor;
+      //  // check before resume to avoid double resume
+      //  if (!doneTasks.find(accessor, task.first)) {
+      //    task.first.resume();
+
+      //   if (task.first.done()) {
+      //     {
+      //       // std::shared_lock<std::shared_mutex> lock(doneDestructLock);
+      //       doneTasks.insert({task.first, true});
+      //       task.first.destroy();
+      //     }
+      //     runningTasks.erase(task.first);
+      //     continue;
+      //   }
+
+      // } else {
+      //   accessor.release();
+      //   runningTasks.erase(task.first);
+
+      //   continue;
+      // }
+
+      // let it go
+      // maybe implement a deferred destruction later
+
+      if (!task.first.done()) {
         task.first.resume();
-
-        if (task.first.done()) {
-          {
-            std::shared_lock<std::shared_mutex> lock(doneDestructLock);
-            doneTasks.insert(task.first);
-          }
-          runningTasks.erase(task.first);
-          continue;
-        }
-
-      } else {
-        runningTasks.erase(task.first);
-        continue;
       }
 
       // check after resume to achieve delayed destruction
@@ -116,11 +129,11 @@ public:
       }
     }
 
-    std::unique_lock<std::shared_mutex> lock(doneDestructLock);
-    for (auto &c : doneTasks) {
-      c.destroy();
-      doneTasks.unsafe_erase(c);
-    }
+    // std::unique_lock<std::shared_mutex> lock(doneDestructLock);
+    // for (auto &c : doneTasks) {
+    //   c.destroy();
+    //   doneTasks.unsafe_erase(c);
+    // }
   }
 
   void runAll() {

@@ -18,9 +18,10 @@ include_directories(include)
 
 
 add_compile_options(-std=c++26 -stdlib=libstdc++ -Wall -Wextra -Wpedantic -Werror)
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -g -fsanitize=address -fno-omit-frame-pointer")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -Og -g -fsanitize=address -fno-omit-frame-pointer")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
 SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=address")
+SET(CMAKE_CXX_LINKER_FLAGS_RELEASE "$ENV{LDFLAGS}")
 
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})

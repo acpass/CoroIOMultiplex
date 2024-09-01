@@ -19,46 +19,52 @@
 namespace ACPAcoro {
 
 enum class httpErrc {
-  OK = 200,
-  BAD_REQUEST = 400,
-  NOT_FOUND = 404,
-  LENTH_REQUIRED = 411,
-  INTERNAL_SERVER_ERROR = 500,
-  NOT_IMPLEMENTED = 501,
+  OK                         = 200,
+  BAD_REQUEST                = 400,
+  NOT_FOUND                  = 404,
+  LENTH_REQUIRED             = 411,
+  INTERNAL_SERVER_ERROR      = 500,
+  NOT_IMPLEMENTED            = 501,
   HTTP_VERSION_NOT_SUPPORTED = 505,
-  UNCOMPLETED_REQUEST = 600,
+  UNCOMPLETED_REQUEST        = 600,
 };
 
 class httpHeaders {
 public:
-  httpHeaders() = default;
+  httpHeaders()  = default;
   ~httpHeaders() = default;
 
   static inline std::unordered_set<std::string_view> const validRequestHeaders =
       {
-          "Accept",     "Accept-Encoding",  "Connection",   "Host",
-          "User-Agent", "Content-Encoding", "Content-Type", "Content-Length",
+          "Accept",
+          "Accept-Encoding",
+          "Connection",
+          "Host",
+          "User-Agent",
+          "Content-Encoding",
+          "Content-Type",
+          "Content-Length",
   };
 
   static bool checkHeader(std::string_view header) {
     return validRequestHeaders.contains(header);
   };
-  std::map<std::string, std::string> data;
+  std::map<std::string, std::string> data{};
 };
 
 class chunkedBody {
 public:
-  chunkedBody() = default;
+  chunkedBody()  = default;
   ~chunkedBody() = default;
   std::vector<std::pair<size_t, std::string>> chunks;
 };
 
 class httpMessage {
 public:
-  httpMessage() = default;
+  httpMessage()          = default;
   virtual ~httpMessage() = default;
 
-  using statusCode = httpErrc;
+  using statusCode       = httpErrc;
 
   enum class method {
     GET,
@@ -66,20 +72,20 @@ public:
   };
 
   static inline std::map<std::string_view, method> const methodStrings = {
-      {"GET", method::GET},
+      { "GET",  method::GET},
       {"HEAD", method::HEAD},
   };
 
-  method method;
+  method method       = method::HEAD;
 
-  std::string version;
-  httpHeaders headers;
-  statusCode status;
+  std::string version = "HTTP/1.1";
+  httpHeaders headers{};
+  statusCode status{httpErrc::OK};
 };
 
 class httpRequest : public httpMessage {
 public:
-  httpRequest() = default;
+  httpRequest()  = default;
   ~httpRequest() = default;
 
   tl::expected<void, std::error_code>
@@ -106,8 +112,7 @@ public:
   static std::shared_ptr<std::string> getBuffer(int fd);
   static void eraseBuffer(int fd);
 
-  std::filesystem::path uri;
-  std::optional<std::variant<std::string, chunkedBody>> body;
+  std::filesystem::path uri{};
   bool completed = false;
 
   static tbb::concurrent_hash_map<int, std::shared_ptr<std::string>>
@@ -116,7 +121,7 @@ public:
 
 class httpResponse : public httpMessage {
 public:
-  httpResponse() = default;
+  httpResponse()  = default;
   ~httpResponse() = default;
 
   // inline static std::unordered_set<std::string_view> const MIMEtypes{
@@ -125,32 +130,32 @@ public:
   //     "image/gif",       "application/json",
   //     "application/xml", "application/octet-stream"};
   //
-  inline static std::unordered_map<std::string_view, std::string_view> const
+  static inline std::unordered_map<std::string_view, std::string_view> const
       extensionMap{
-          {"html", "text/html"},
-          {"txt", "text/plain"},
-          {"jpeg", "image/jpeg"},
-          {"jpg", "image/jpeg"},
-          {"png", "image/png"},
-          {"gif", "image/gif"},
-          {"json", "application/json"},
-          {"xml", "application/xml"},
-          {"bin", "application/octet-stream"},
-          {"css", "text/css"},
-          {"js", "application/javascript"},
-          {"webp", "image/webp"},
-          {"ico", "image/x-icon"},
-          {"svg", "image/svg+xml"},
-          {"pdf", "application/pdf"},
-          {"zip", "application/zip"},
-          {"woff", "application/font-woff"},
-          {"woff2", "application/font-woff2"},
+          {   "html",                "text/html"},
+          {    "txt",               "text/plain"},
+          {   "jpeg",               "image/jpeg"},
+          {    "jpg",               "image/jpeg"},
+          {    "png",                "image/png"},
+          {    "gif",                "image/gif"},
+          {   "json",         "application/json"},
+          {    "xml",          "application/xml"},
+          {    "bin", "application/octet-stream"},
+          {    "css",                 "text/css"},
+          {     "js",   "application/javascript"},
+          {   "webp",               "image/webp"},
+          {    "ico",             "image/x-icon"},
+          {    "svg",            "image/svg+xml"},
+          {    "pdf",          "application/pdf"},
+          {    "zip",          "application/zip"},
+          {   "woff",    "application/font-woff"},
+          {  "woff2",   "application/font-woff2"},
           {"pf_meta", "application/octet-stream"},
-      };
+  };
 
-  static const std::shared_ptr<std::string> notFoundResponse;
-  static const std::shared_ptr<std::string> badRequestResponse;
-  static const std::shared_ptr<std::string> notImplementedResponse;
+  static std::shared_ptr<std::string> const notFoundResponse;
+  static std::shared_ptr<std::string> const badRequestResponse;
+  static std::shared_ptr<std::string> const notImplementedResponse;
 
   /**   @brief Make a response message from the request
    *    @return shared_ptr to the response message
@@ -166,7 +171,7 @@ public:
    * */
   std::shared_ptr<std::string> serialize();
 
-  std::filesystem::path uri;
+  std::filesystem::path uri{};
 };
 
 class invalidRequest : public std::runtime_error {

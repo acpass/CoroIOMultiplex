@@ -1,7 +1,7 @@
 
 #include "http/Http.hpp"
-#include "file/File.hpp"
 
+#include "file/File.hpp"
 #include "tl/expected.hpp"
 
 #include <async/Epoll.hpp>
@@ -39,16 +39,17 @@ std::filesystem::path webroot{"/home/acpass/www/"};
 // size_t const badRequestResponseSize = strlen(badRequestResponse);
 //
 Task<int, yieldPromiseType<int>> responseHandler(
-    std::shared_ptr<reactorSocket> socket, std::shared_ptr<httpRequest> request,
+    std::shared_ptr<reactorSocket> socket,
+    std::shared_ptr<httpRequest> request,
     httpResponse::statusCode status = httpResponse::statusCode::OK) {
 
-  request->status = status;
-  auto response = httpResponse::makeResponse(*request, webroot);
+  request->status  = status;
+  auto response    = httpResponse::makeResponse(*request, webroot);
   auto responseStr = response->serialize();
 
   while (true) {
     size_t totalsend = 0;
-    auto sendResult = socket->send(responseStr->data(), responseStr->size());
+    auto sendResult  = socket->send(responseStr->data(), responseStr->size());
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -70,6 +71,12 @@ Task<int, yieldPromiseType<int>> responseHandler(
       }
     } // send success
   }
+
+  if (response->method == ACPAcoro::httpMessage::method::HEAD ||
+      response->status != httpResponse::statusCode::OK) {
+    co_return 0;
+  }
+
   std::shared_ptr<regularFile> file;
   while (true) {
     auto openResult = regularFile::open(response->uri);
@@ -89,10 +96,10 @@ Task<int, yieldPromiseType<int>> responseHandler(
     }
   }
 
-  while (response->method != ACPAcoro::httpMessage::method::HEAD && true) {
+  while (true) {
     size_t totalsend = 0;
-    auto size = file->size;
-    auto sendResult = socket->sendfile(file->fd, size);
+    auto size        = file->size;
+    auto sendResult  = socket->sendfile(file->fd, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -109,7 +116,7 @@ Task<int, yieldPromiseType<int>> responseHandler(
 
     else {
       totalsend += sendResult.value();
-      size -= sendResult.value();
+      size      -= sendResult.value();
       if (totalsend >= file->size) {
         break;
       }
@@ -188,7 +195,8 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
                 // std::println("Internal server error");
                 // std::println("Error: {}", e.message());
                 auto responseTask = responseHandler(
-                    socket, nullptr,
+                    socket,
+                    nullptr,
                     httpResponse::statusCode::INTERNAL_SERVER_ERROR);
                 loopInstance::getInstance().addTask(responseTask.detach(),
                                                     true);
@@ -269,18 +277,18 @@ Task<> co_main(std::string const &port) {
 
   server->listen();
 
-  auto &loop = loopInstance::getInstance();
+  auto &loop  = loopInstance::getInstance();
   auto &epoll = epollInstance::getInstance();
 
   epoll_event event;
-  event.events = EPOLLIN | EPOLLET;
+  event.events   = EPOLLIN | EPOLLET;
   event.data.ptr = acceptAll(*server, httpHandle).detach().address();
   epoll.addEvent(server->fd, &event);
 
   loop.addTask(epollWaitEvent().detach(), true);
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 15; _++) {
+  for (int _ = 0; _ < 17; _++) {
     threads.emplace_back(runTasks);
   }
 
