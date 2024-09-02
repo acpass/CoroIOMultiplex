@@ -273,7 +273,7 @@ Task<> co_main(std::string const &port) {
 
   server->listen();
 
-  auto &loop = loopInstance::getInstance();
+  // auto &loop = loopInstance::getInstance();
   auto &epoll = epollInstance::getInstance();
 
   epoll_event event;
@@ -281,15 +281,17 @@ Task<> co_main(std::string const &port) {
   event.data.ptr = acceptAll(server, httpHandle).detach().address();
   epoll.addEvent(server->fd, &event);
 
-  loop.addTask(epollWaitEvent().detach(), true);
+  // loop.addTask(epollWaitEvent().detach(), true);
 
   std::vector<std::jthread> threads;
   for (int _ = 0; _ < threadCount; _++) {
     threads.emplace_back(runTasks);
   }
 
+  auto epollTask = epollWaitEvent();
   while (true) {
-    loop.runTasks();
+    // loop.runTasks();
+    epollTask.resume();
   }
 }
 
