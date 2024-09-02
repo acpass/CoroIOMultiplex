@@ -8,3 +8,6 @@
 [submodule "perf/FlameGraph"]
 	path = perf/FlameGraph
 	url = https://github.com/brendangregg/FlameGraph.git
+[submodule "perf/WebBench"]
+	path = perf/WebBench
+	url = https://github.com/gzc/WebBench.git

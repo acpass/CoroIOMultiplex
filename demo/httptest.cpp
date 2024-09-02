@@ -26,6 +26,7 @@ using namespace ACPAcoro;
 std::pmr::synchronized_pool_resource poolResource{};
 
 std::filesystem::path webroot{"/home/acpass/www/"};
+int threadCount = 16;
 
 // char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
 //                           "Content-Length: 13\r\n"
@@ -46,7 +47,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
   while (true) {
     size_t totalsend = 0;
-    auto sendResult  = socket->send(responseStr->data(), responseStr->size());
+    auto sendResult = socket->send(responseStr->data(), responseStr->size());
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -96,8 +97,8 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
   while (true) {
     size_t totalsend = 0;
-    auto size        = file.size;
-    auto sendResult  = socket->sendfile(file.fd, size);
+    auto size = file.size;
+    auto sendResult = socket->sendfile(file.fd, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -114,7 +115,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
     else {
       totalsend += sendResult.value();
-      size      -= sendResult.value();
+      size -= sendResult.value();
       if (totalsend >= file.size) {
         break;
       }
@@ -173,7 +174,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             // add response task
             .and_then([&]() -> tl::expected<void, std::error_code> {
               // std::println("Adding response task");
-              request.status    = httpResponse::statusCode::OK;
+              request.status = httpResponse::statusCode::OK;
               auto responseTask = responseHandler(socket, std::move(request));
               loopInstance::getInstance().addTask(responseTask.detach(), true);
               return {};
@@ -184,7 +185,7 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
             .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
               if (e == make_error_code(httpErrc::BAD_REQUEST)) {
                 // std::println("Bad request");
-                request.status    = httpResponse::statusCode::BAD_REQUEST;
+                request.status = httpResponse::statusCode::BAD_REQUEST;
                 auto responseTask = responseHandler(socket, std::move(request));
                 loopInstance::getInstance().addTask(responseTask.detach(),
                                                     true);
@@ -272,18 +273,18 @@ Task<> co_main(std::string const &port) {
 
   server->listen();
 
-  auto &loop  = loopInstance::getInstance();
+  auto &loop = loopInstance::getInstance();
   auto &epoll = epollInstance::getInstance();
 
   epoll_event event;
-  event.events   = EPOLLIN | EPOLLET;
+  event.events = EPOLLIN | EPOLLET;
   event.data.ptr = acceptAll(server, httpHandle).detach().address();
   epoll.addEvent(server->fd, &event);
 
   loop.addTask(epollWaitEvent().detach(), true);
 
   std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 17; _++) {
+  for (int _ = 0; _ < threadCount; _++) {
     threads.emplace_back(runTasks);
   }
 
@@ -303,6 +304,10 @@ int main(int argc, char *argv[]) {
 
   if (argc >= 3) {
     webroot = argv[2];
+  }
+
+  if (argc >= 4) {
+    threadCount = std::stoi(argv[3]);
   }
 
   auto mainTask = co_main(port);
