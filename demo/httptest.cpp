@@ -56,7 +56,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::no_message_available)) {
         co_yield {};
       } else {
-        std::println("Error: {}", sendResult.error().message());
+        // std::println("Error: {}", sendResult.error().message());
         co_return {};
       }
 
@@ -86,7 +86,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::too_many_files_open_in_system)) {
         co_yield {};
       } else {
-        println("Error: {}", openResult.error().message());
+        // println("Error: {}", openResult.error().message());
         co_return {};
       }
     } else {
@@ -107,7 +107,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::no_message_available)) {
         co_yield {};
       } else {
-        std::println("Error: {}", sendResult.error().message());
+        // std::println("Error: {}", sendResult.error().message());
         co_return {};
       }
 
