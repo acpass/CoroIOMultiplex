@@ -105,9 +105,10 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
   // few seconds after launch,
   // the sendfile will block
   while (true) {
-    off_t offset = 0;
-    auto size = file.size;
-    auto sendResult = socket->sendfile(file.fd, &offset, size);
+    long sendBytes = 0;
+    // off_t offset = 0;
+    long size = file.size;
+    auto sendResult = socket->sendfile(file.fd, nullptr, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -123,8 +124,9 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
     } // error handle
 
     else {
+      sendBytes += sendResult.value();
       size -= sendResult.value();
-      if ((size_t)offset >= file.size) {
+      if (sendBytes >= (long)file.size || size <= 0) {
         break;
       }
     } // send success
