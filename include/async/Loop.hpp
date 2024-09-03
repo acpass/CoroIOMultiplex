@@ -97,7 +97,6 @@ public:
         task.first.resume();
       }
 
-      // check after resume to achieve delayed destruction
       runningTasks.erase(task.first);
 
       if (task.second && !task.first.done()) {

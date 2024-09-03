@@ -22,20 +22,22 @@ public:
       return tl::make_unexpected(
           std::error_code(errno, std::system_category()));
     }
+
     size = std::filesystem::file_size(path);
     if (size < 0) {
       return tl::make_unexpected(
           std::error_code(errno, std::system_category()));
     }
+
     return {};
   }
 
   regularFile() : fd(-1), size(0) {};
 
   regularFile(regularFile &&other) {
-    fd         = other.fd;
-    size       = other.size;
-    other.fd   = -1;
+    fd = other.fd;
+    size = other.size;
+    other.fd = -1;
     other.size = 0;
   };
 

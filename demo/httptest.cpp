@@ -23,7 +23,6 @@
 #include <vector>
 
 using namespace ACPAcoro;
-std::pmr::synchronized_pool_resource poolResource{};
 
 std::filesystem::path webroot{"/home/acpass/www/"};
 int threadCount = 16;
@@ -45,9 +44,15 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
   httpResponse response(request, webroot);
   auto responseStr = response.serialize();
 
+  int on = 1;
+  int off = 0;
+
+  setsockopt(socket->fd, SOL_TCP, TCP_CORK, &on, sizeof(on));
+
   while (true) {
     size_t totalsend = 0;
-    auto sendResult = socket->send(responseStr->data(), responseStr->size());
+    size_t restSize = responseStr->size();
+    auto sendResult = socket->send(responseStr->data() + totalsend, restSize);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -56,7 +61,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::no_message_available)) {
         co_yield {};
       } else {
-        // std::println("Error: {}", sendResult.error().message());
+        std::println("Error: {}", sendResult.error().message());
         co_return {};
       }
 
@@ -64,6 +69,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
     else {
       totalsend += sendResult.value();
+      restSize -= sendResult.value();
       if (totalsend >= responseStr->size()) {
         break;
       }
@@ -86,7 +92,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::too_many_files_open_in_system)) {
         co_yield {};
       } else {
-        // println("Error: {}", openResult.error().message());
+        println("Error: {}", openResult.error().message());
         co_return {};
       }
     } else {
@@ -95,10 +101,13 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
     }
   }
 
+  // TODO: fix bug
+  // few seconds after launch,
+  // the sendfile will block
   while (true) {
-    size_t totalsend = 0;
+    off_t offset = 0;
     auto size = file.size;
-    auto sendResult = socket->sendfile(file.fd, size);
+    auto sendResult = socket->sendfile(file.fd, &offset, size);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -107,20 +116,21 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::no_message_available)) {
         co_yield {};
       } else {
-        // std::println("Error: {}", sendResult.error().message());
+        std::println("Error: {}", sendResult.error().message());
         co_return {};
       }
 
     } // error handle
 
     else {
-      totalsend += sendResult.value();
       size -= sendResult.value();
-      if (totalsend >= file.size) {
+      if ((size_t)offset >= file.size) {
         break;
       }
     } // send success
   }
+
+  setsockopt(socket->fd, SOL_TCP, TCP_CORK, &off, sizeof(off));
   // response to the client
   // httpResponse response{};
   // std::println("Handling response from socket {}", socket->fd);
