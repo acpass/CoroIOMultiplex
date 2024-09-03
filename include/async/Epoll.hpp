@@ -58,7 +58,7 @@ inline Task<int, yieldPromiseType<int>> epollWaitEvent(int timeout = -1) {
       // std::println("epollWaitEvent: fd: {}", events[i].data.fd);
       // std::println("epollWaitEvent: events: {}", events[i].events);
       loop.addTask(std::coroutine_handle<>::from_address(events[i].data.ptr),
-                   false);
+                   true);
     }
     // std::println("finished epollWaitEvent");
     co_yield {};
