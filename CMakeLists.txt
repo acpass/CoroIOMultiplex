@@ -18,9 +18,9 @@ include_directories(include)
 
 
 add_compile_options(-std=c++26 -stdlib=libstdc++ -Wall -Wextra -Wpedantic -Werror)
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -Og -g -fsanitize=thread,undefined -fno-omit-frame-pointer -fPIE")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -Og -g -fsanitize=address -fno-omit-frame-pointer -fPIE")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
-SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=thread,undefined -g -fPIE")
+SET(CMAKE_CXX_LINKER_FLAGS_DEBUG "$ENV{LDFLAGS} -fsanitize=address -g -fPIE")
 SET(CMAKE_CXX_LINKER_FLAGS_RELEASE "$ENV{LDFLAGS}")
 
 

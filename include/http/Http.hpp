@@ -19,31 +19,25 @@
 namespace ACPAcoro {
 
 enum class httpErrc {
-  OK                         = 200,
-  BAD_REQUEST                = 400,
-  NOT_FOUND                  = 404,
-  LENTH_REQUIRED             = 411,
-  INTERNAL_SERVER_ERROR      = 500,
-  NOT_IMPLEMENTED            = 501,
+  OK = 200,
+  BAD_REQUEST = 400,
+  NOT_FOUND = 404,
+  LENTH_REQUIRED = 411,
+  INTERNAL_SERVER_ERROR = 500,
+  NOT_IMPLEMENTED = 501,
   HTTP_VERSION_NOT_SUPPORTED = 505,
-  UNCOMPLETED_REQUEST        = 600,
+  UNCOMPLETED_REQUEST = 600,
 };
 
 class httpHeaders {
 public:
-  httpHeaders()  = default;
+  httpHeaders() = default;
   ~httpHeaders() = default;
 
   static inline std::unordered_set<std::string_view> const validRequestHeaders =
       {
-          "Accept",
-          "Accept-Encoding",
-          "Connection",
-          "Host",
-          "User-Agent",
-          "Content-Encoding",
-          "Content-Type",
-          "Content-Length",
+          "Accept",     "Accept-Encoding",  "Connection",   "Host",
+          "User-Agent", "Content-Encoding", "Content-Type", "Content-Length",
   };
 
   static bool checkHeader(std::string_view header) {
@@ -54,17 +48,17 @@ public:
 
 class chunkedBody {
 public:
-  chunkedBody()  = default;
+  chunkedBody() = default;
   ~chunkedBody() = default;
   std::vector<std::pair<size_t, std::string>> chunks;
 };
 
 class httpMessage {
 public:
-  httpMessage()          = default;
+  httpMessage() = default;
   virtual ~httpMessage() = default;
 
-  using statusCode       = httpErrc;
+  using statusCode = httpErrc;
 
   enum class method {
     GET,
@@ -72,11 +66,11 @@ public:
   };
 
   static inline std::map<std::string_view, method> const methodStrings = {
-      { "GET",  method::GET},
+      {"GET", method::GET},
       {"HEAD", method::HEAD},
   };
 
-  method method       = method::HEAD;
+  method method = method::HEAD;
 
   std::string version = "HTTP/1.1";
   httpHeaders headers{};
@@ -85,7 +79,7 @@ public:
 
 class httpRequest : public httpMessage {
 public:
-  httpRequest()  = default;
+  httpRequest() = default;
   ~httpRequest() = default;
 
   tl::expected<void, std::error_code>
@@ -104,7 +98,7 @@ public:
    *    3) other errors: when the read encounter other error from the read
    *       operation except EWOULDBLOCK or EAGAIN
    */
-  tl::expected<std::shared_ptr<std::string>, std::error_code>
+  static tl::expected<std::shared_ptr<std::string>, std::error_code>
   readRequest(reactorSocket &);
 
   static bool checkMethod(std::string_view method);
@@ -112,9 +106,9 @@ public:
   static std::shared_ptr<std::string> getBuffer(int fd);
   static void eraseBuffer(int fd);
 
-  httpRequest(httpRequest &&)                 = default;
-  httpRequest &operator=(httpRequest &&)      = default;
-  httpRequest(httpRequest const &)            = delete;
+  httpRequest(httpRequest &&) = default;
+  httpRequest &operator=(httpRequest &&) = default;
+  httpRequest(httpRequest const &) = delete;
   httpRequest &operator=(httpRequest const &) = delete;
 
   std::filesystem::path uri{};
@@ -126,7 +120,7 @@ public:
 
 class httpResponse : public httpMessage {
 public:
-  httpResponse()  = default;
+  httpResponse() = default;
   ~httpResponse() = default;
 
   // inline static std::unordered_set<std::string_view> const MIMEtypes{
@@ -137,26 +131,26 @@ public:
   //
   static inline std::unordered_map<std::string_view, std::string_view> const
       extensionMap{
-          {   "html",                "text/html"},
-          {    "txt",               "text/plain"},
-          {   "jpeg",               "image/jpeg"},
-          {    "jpg",               "image/jpeg"},
-          {    "png",                "image/png"},
-          {    "gif",                "image/gif"},
-          {   "json",         "application/json"},
-          {    "xml",          "application/xml"},
-          {    "bin", "application/octet-stream"},
-          {    "css",                 "text/css"},
-          {     "js",   "application/javascript"},
-          {   "webp",               "image/webp"},
-          {    "ico",             "image/x-icon"},
-          {    "svg",            "image/svg+xml"},
-          {    "pdf",          "application/pdf"},
-          {    "zip",          "application/zip"},
-          {   "woff",    "application/font-woff"},
-          {  "woff2",   "application/font-woff2"},
+          {"html", "text/html"},
+          {"txt", "text/plain"},
+          {"jpeg", "image/jpeg"},
+          {"jpg", "image/jpeg"},
+          {"png", "image/png"},
+          {"gif", "image/gif"},
+          {"json", "application/json"},
+          {"xml", "application/xml"},
+          {"bin", "application/octet-stream"},
+          {"css", "text/css"},
+          {"js", "application/javascript"},
+          {"webp", "image/webp"},
+          {"ico", "image/x-icon"},
+          {"svg", "image/svg+xml"},
+          {"pdf", "application/pdf"},
+          {"zip", "application/zip"},
+          {"woff", "application/font-woff"},
+          {"woff2", "application/font-woff2"},
           {"pf_meta", "application/octet-stream"},
-  };
+      };
 
   static std::shared_ptr<std::string> const notFoundResponse;
   static std::shared_ptr<std::string> const badRequestResponse;

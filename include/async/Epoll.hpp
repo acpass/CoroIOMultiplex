@@ -38,7 +38,7 @@ struct epollInstance {
   void operator=(epollInstance &&) = delete;
 
   int epfd = epoll_create1(0);
-  static constexpr int maxevents = 64;
+  static constexpr int maxevents = 128;
 
 private:
   epollInstance() = default;

@@ -68,7 +68,7 @@ public:
   void runTasks() {
     // size_t runcount = 0;
 
-    while (!readyTasks.empty()) {
+    while (true) {
       // if (runcount++ > 1000) {
       //   break;
       // }
@@ -78,7 +78,7 @@ public:
       // if the queue is empty
       // continue
       if (!readyTasks.try_pop(task)) {
-        continue;
+        break;
       }
 
       // atomic
@@ -90,30 +90,6 @@ public:
         continue;
       }
 
-      // wrong code
-
-      //  decltype(doneTasks)::accessor accessor;
-      //  // check before resume to avoid double resume
-      //  if (!doneTasks.find(accessor, task.first)) {
-      //    task.first.resume();
-
-      //   if (task.first.done()) {
-      //     {
-      //       // std::shared_lock<std::shared_mutex> lock(doneDestructLock);
-      //       doneTasks.insert({task.first, true});
-      //       task.first.destroy();
-      //     }
-      //     runningTasks.erase(task.first);
-      //     continue;
-      //   }
-
-      // } else {
-      //   accessor.release();
-      //   runningTasks.erase(task.first);
-
-      //   continue;
-      // }
-
       // let it go
       // maybe implement a deferred destruction later
 
@@ -124,7 +100,7 @@ public:
       // check after resume to achieve delayed destruction
       runningTasks.erase(task.first);
 
-      if (task.second) {
+      if (task.second && !task.first.done()) {
         addTask(task.first, true);
       }
     }

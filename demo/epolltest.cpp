@@ -25,8 +25,7 @@
 using namespace ACPAcoro;
 
 std::pmr::synchronized_pool_resource poolResource{
-    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}
-};
+    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}};
 // bufferPool<char, 1024> bufferPoolInstance;
 
 struct readBuffer {
@@ -41,12 +40,13 @@ void pooltest() {
 Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
                                         // std::span<char> buffer,
                                         // char *buffer,
-                                        std::shared_ptr<readBuffer> buffer,
+                                        std::shared_ptr<std::string> buffer,
                                         size_t size) {
   // std::println("Writing to socket {}", socket->fd);
+  auto fullsize = buffer->size();
   while (true) {
-    size_t written  = 0;
-    auto sendResult = socket->send(buffer->buffer + written, size);
+    size_t written = 0;
+    auto sendResult = socket->send(buffer->data() + written, size);
     if (!sendResult) {
       if (sendResult.error() ==
               make_error_code(std::errc::resource_unavailable_try_again) ||
@@ -59,8 +59,8 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
       }
     } else {
       written += sendResult.value();
-      size    -= sendResult.value();
-      if (written >= size) {
+      size -= sendResult.value();
+      if (written >= fullsize) {
         co_return {};
       }
     }
@@ -73,14 +73,13 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
 // epoll
 tl::expected<void, std::error_code>
 echoHandle(std::shared_ptr<reactorSocket> socket) {
-  // char buffer[1024];
+  char tmpBuffer[1024];
 
+  auto buffer = std::make_shared<std::string>();
   while (true) {
     // auto buffer = bufferPoolInstance.getBuffer();
-    auto buffer = std::allocate_shared<readBuffer>(
-        std::pmr::polymorphic_allocator<readBuffer>(&poolResource));
     auto read =
-        socket->recv(buffer->buffer, 1024)
+        socket->recv(tmpBuffer, 1024)
             .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
               if (readCnt == 0) {
                 return tl::unexpected(make_error_code(socketError::eofError));
@@ -88,17 +87,22 @@ echoHandle(std::shared_ptr<reactorSocket> socket) {
               return readCnt;
             })
             .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
-              loopInstance::getInstance().addTask(
-                  writer(socket, buffer, readCnt).detach(), true);
-
+              buffer->append(tmpBuffer, readCnt);
               return readCnt;
             });
 
     if (!read) {
       if (read.error() ==
               make_error_code(std::errc::resource_unavailable_try_again) ||
-          read.error() == make_error_code(std::errc::operation_would_block)) {
-        return {};
+          read.error() == make_error_code(std::errc::operation_would_block) ||
+          read.error() == make_error_code(socketError::eofError)) {
+
+        loopInstance::getInstance().addTask(
+            writer(socket, buffer, buffer->size()).detach(), true);
+
+        if (read.error() != make_error_code(socketError::eofError)) {
+          return {};
+        }
       }
       return tl::unexpected(read.error());
     }
@@ -114,15 +118,16 @@ void runTasks() {
 
 Task<> co_main() {
   auto &epoll = epollInstance::getInstance();
-  auto server = std::make_shared<serverSocket>("12312");
+  auto server = std::make_unique<serverSocket>("12312");
   server->listen();
+  auto fd = server->fd;
   std::println("Listening on port 12312");
   auto waitTask = epollWaitEvent();
   epoll_event event;
-  event.events   = EPOLLIN;
-  event.data.ptr = acceptAll(server, echoHandle).detach().address();
+  event.events = EPOLLIN;
+  event.data.ptr = acceptAll(std::move(server), echoHandle).detach().address();
   try {
-    epoll.addEvent(server->fd, &event);
+    epoll.addEvent(fd, &event);
   } catch (std::error_code const &e) {
     std::println("Error: {}", e.message());
     std::terminate();

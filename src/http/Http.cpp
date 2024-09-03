@@ -40,17 +40,24 @@ std::shared_ptr<std::string> httpRequest::getBuffer(int fd) {
   }
 }
 
-void httpRequest::eraseBuffer(int fd) {
-  uncompletedRequests.erase(fd);
-}
+void httpRequest::eraseBuffer(int fd) { uncompletedRequests.erase(fd); }
 
 // read the request message from the socket
+// when it read a uncompletedRequests
+// the process will be saved in a buffer
 tl::expected<std::shared_ptr<std::string>, std::error_code>
 httpRequest::readRequest(reactorSocket &socket) {
   // std::println("Reading request message for socket {}", socket.fd);
   char buffer[1024];
   auto requestMessage = getBuffer(socket.fd);
-  while (!this->completed) {
+
+  // read loop
+  // until the read return a error_code
+  // case 1)  EAGAIN
+  // case 2)  EOF
+  // case 3)  others
+  while (true) {
+
     auto readResult =
         socket
             .read(buffer, 1024)
@@ -59,51 +66,51 @@ httpRequest::readRequest(reactorSocket &socket) {
             .and_then([&](int bytesRead) -> tl::expected<int, std::error_code> {
               if (bytesRead == 0) {
                 return tl::unexpected(make_error_code(socketError::eofError));
+
               } else if (bytesRead + requestMessage->size() > 4096) {
+                // if the request is too long
                 return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
               }
+
               return bytesRead;
             })
 
             // append the data to the requestMessage
             .map([&](int bytesRead) {
               requestMessage->append(buffer, bytesRead);
-            })
-
-            // handle the error
-            // if the error is EWOULDBLOCK or EAGAIN,
-            // check if the request is completed
-            // if so, erase the buffer and return
-            // otherwise, return an error
-            .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
-              if (e == make_error_code(
-                           std::errc::resource_unavailable_try_again) ||
-                  e == make_error_code(std::errc::operation_would_block)) {
-                // std::println("EWOULDBLOCK or EAGAIN");
-
-                if (requestMessage->ends_with("\r\n\r\n")) {
-                  eraseBuffer(socket.fd);
-                  this->completed = true;
-
-                  return {};
-                }
-
-                // std::print("request now:\n{}", *requestMessage);
-
-                return tl::unexpected(
-                    make_error_code(httpErrc::UNCOMPLETED_REQUEST));
-              }
-
-              // error case 3
-              eraseBuffer(socket.fd);
-              return tl::unexpected(e);
             });
 
-    if (!readResult)
-      return tl::unexpected(readResult.error());
-  }
+    // handle the error
+    // if the error is EWOULDBLOCK or EAGAIN,
+    // check if the request is completed
+    // if so, erase the buffer and return
+    // otherwise, return an error
+    if (!readResult) {
+      // in this three cases, check if the request is completed
+      if (readResult.error() ==
+              make_error_code(std::errc::resource_unavailable_try_again) ||
+          readResult.error() ==
+              make_error_code(std::errc::operation_would_block) ||
+          readResult.error() == make_error_code(socketError::eofError)) {
+        // std::println("EWOULDBLOCK or EAGAIN");
 
-  return requestMessage;
+        // if so, return as Success
+        if (requestMessage->ends_with("\r\n\r\n")) {
+          eraseBuffer(socket.fd);
+          return requestMessage;
+        }
+
+        // otherwise, the requestMessage is uncompletedRequests
+        // return error
+        if (readResult.error() != make_error_code(socketError::eofError)) {
+          return tl::unexpected(make_error_code(httpErrc::UNCOMPLETED_REQUEST));
+        }
+
+        eraseBuffer(socket.fd);
+        return tl::unexpected(readResult.error());
+      }
+    }
+  }
 }
 
 tl::expected<void, std::error_code>
@@ -220,30 +227,27 @@ httpRequest::parseFirstLine(std::string_view &request) {
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
 
-  this->method  = methodStrings.at(method);
-  this->uri     = std::move(uri);
+  this->method = methodStrings.at(method);
+  this->uri = std::move(uri);
   this->version = std::move(version);
   // std::println("Success to parse the firstline");
   return {};
 }
 
 std::shared_ptr<std::string> const httpResponse::notFoundResponse =
-    std::make_shared<std::string>(
-        "HTTP/1.1 404 Not Found\r\n"
-        "Content-Length: 0\r\n"
-        "\r\n");
+    std::make_shared<std::string>("HTTP/1.1 404 Not Found\r\n"
+                                  "Content-Length: 0\r\n"
+                                  "\r\n");
 
 std::shared_ptr<std::string> const httpResponse::badRequestResponse =
-    std::make_shared<std::string>(
-        "HTTP/1.1 400 Bad Request\r\n"
-        "Content-Length: 0\r\n"
-        "\r\n");
+    std::make_shared<std::string>("HTTP/1.1 400 Bad Request\r\n"
+                                  "Content-Length: 0\r\n"
+                                  "\r\n");
 
 std::shared_ptr<std::string> const httpResponse::notImplementedResponse =
-    std::make_shared<std::string>(
-        "HTTP/1.1 501 Not Implemented\r\n"
-        "Content-Length: 0\r\n"
-        "\r\n");
+    std::make_shared<std::string>("HTTP/1.1 501 Not Implemented\r\n"
+                                  "Content-Length: 0\r\n"
+                                  "\r\n");
 
 /** TODO
  * 1) if the status is not OK, return the status
@@ -262,10 +266,10 @@ httpResponse::httpResponse(httpRequest &request,
   //   return tl::unexpected(make_error_code(httpErrc::NOT_FOUND));
   // }
 
-  version              = request.version;
-  status               = request.status;
-  method               = request.method;
-  uri                  = std::filesystem::weakly_canonical(request.uri);
+  version = request.version;
+  status = request.status;
+  method = request.method;
+  uri = std::filesystem::weakly_canonical(request.uri);
   auto &requestHeaders = request.headers.data;
 
   if (uri.string().ends_with("/")) {
@@ -349,9 +353,7 @@ std::shared_ptr<std::string> httpResponse::serialize() {
 
   default:
     auto response = std::make_shared<std::string>();
-    response->append(std::format("{} {} {}\r\n",
-                                 version,
-                                 (int)status,
+    response->append(std::format("{} {} {}\r\n", version, (int)status,
                                  httpErrorCode().message((int)status)));
     for (auto &headerLine : headers.data) {
       response->append(

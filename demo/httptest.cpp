@@ -160,105 +160,56 @@ tl::expected<void, std::error_code>
 httpHandle(std::shared_ptr<reactorSocket> socket) {
   // std::println("Handling socket {}", socket->fd);
 
-  while (true) {
-    httpRequest request;
+  httpRequest request;
 
-    auto requestResult =
-        request
-            // read request
-            .readRequest(*socket)
-            // parse request
-            .and_then([&](auto strPtr) -> tl::expected<void, std::error_code> {
-              return request.parseResquest(strPtr);
-            })
-            // add response task
-            .and_then([&]() -> tl::expected<void, std::error_code> {
-              // std::println("Adding response task");
-              request.status = httpResponse::statusCode::OK;
+  auto requestResult =
+      request
+          // read request
+          .readRequest(*socket)
+          // parse request
+          .and_then([&](auto strPtr) -> tl::expected<void, std::error_code> {
+            return request.parseResquest(strPtr);
+          })
+          // add response task
+          .and_then([&]() -> tl::expected<void, std::error_code> {
+            // std::println("Adding response task");
+            request.status = httpResponse::statusCode::OK;
+            auto responseTask = responseHandler(socket, std::move(request));
+            loopInstance::getInstance().addTask(responseTask.detach(), true);
+            return {};
+          })
+          // error handle phase
+          // if the request is uncompleted, ignore it
+          // otherwise, return the error
+          .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
+            if (e == make_error_code(httpErrc::BAD_REQUEST)) {
+              // std::println("Bad request");
+              request.status = httpResponse::statusCode::BAD_REQUEST;
               auto responseTask = responseHandler(socket, std::move(request));
               loopInstance::getInstance().addTask(responseTask.detach(), true);
               return {};
-            })
-            // error handle phase
-            // if the request is uncompleted, ignore it
-            // otherwise, return the error
-            .or_else([&](auto const &e) -> tl::expected<void, std::error_code> {
-              if (e == make_error_code(httpErrc::BAD_REQUEST)) {
-                // std::println("Bad request");
-                request.status = httpResponse::statusCode::BAD_REQUEST;
-                auto responseTask = responseHandler(socket, std::move(request));
-                loopInstance::getInstance().addTask(responseTask.detach(),
-                                                    true);
-              } else if (e != make_error_code(socketError::eofError) &&
-                         e != make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
-                // std::println("Internal server error");
-                // std::println("Error: {}", e.message());
-                auto responseTask = responseHandler(socket, std::move(request));
-                loopInstance::getInstance().addTask(responseTask.detach(),
-                                                    true);
-              }
+            } else if (e != make_error_code(socketError::eofError) &&
+                       e != make_error_code(httpErrc::UNCOMPLETED_REQUEST) &&
+                       e != make_error_code(std::errc::connection_reset)) {
+              // std::println("Internal server error");
+              // std::println("Error: {}", e.message());
+              auto responseTask = responseHandler(socket, std::move(request));
+              loopInstance::getInstance().addTask(responseTask.detach(), true);
+              return {};
+            }
 
-              return tl::unexpected(e);
-            });
+            return tl::unexpected(e);
+          });
 
-    if (!requestResult) {
-      if (requestResult.error() ==
-          make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
-        return {};
-      }
-      return tl::unexpected(requestResult.error());
+  if (!requestResult) {
+    if (requestResult.error() ==
+        make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
+      // mean yield
+      return {};
     }
-
-    // if (!readResult) {
-    //   if (readResult.error() ==
-    //   make_error_code(httpErrc::uncompletedRequest)) {
-    //     return std::nullopt;
-    //   } else {
-    //     // eof and other errors
-    //     return readResult.error();
-    //   }
-    // }
-
-    // request
-    //     ->parseResquest(*readResult.value())
-
-    //     // and_then mean there is an error
-    //     .and_then([&](auto const &e) -> std::optional<std::error_code> {
-    //       if (e == make_error_code(httpErrc::badRequest)) {
-    //         auto responseTask = responseHandler(
-    //             socket, nullptr, httpResponse::statusCode::BAD_REQUEST);
-    //         loopInstance::getInstance().addTask(responseTask.detach());
-    //       } else {
-    //         auto responseTask = responseHandler(
-    //             socket,
-    //             nullptr,
-    //             httpResponse::statusCode::INTERNAL_SERVER_ERROR);
-    //         loopInstance::getInstance().addTask(responseTask.detach());
-    //       }
-
-    //       return e;
-    //     })
-    //     // or_else mean there is no error
-    //     // bussiness logic
-    //     .or_else([&]() -> std::optional<std::error_code> {
-    //       auto responseTask = responseHandler(socket, request);
-    //       loopInstance::getInstance().addTask(responseTask.detach());
-    //       return std::nullopt;
-    //     });
-    // // } catch (eofException &e) {
-    //   std::rethrow_exception(std::current_exception());
-    // } catch (uncompletedRequest &e) {
-    //   return std::nullopt;
-    // } catch (invalidRequest &e) {
-    //   auto responseTask = responseHandler(socket, nullptr, e.status);
-    //   loopInstance::getInstance().addTask(responseTask.detach());
-    // } catch (...) {
-    //   auto responseTask = responseHandler(
-    //       socket, nullptr,
-    //       httpResponse::statusCode::INTERNAL_SERVER_ERROR);
-    //   loopInstance::getInstance().addTask(responseTask.detach());
-    // }
+    return tl::unexpected(requestResult.error());
   }
+  return {};
 }
 
 void runTasks() {
@@ -269,29 +220,30 @@ void runTasks() {
 }
 
 Task<> co_main(std::string const &port) {
-  auto server = std::make_shared<serverSocket>(port);
+  auto server = std::make_unique<serverSocket>(port);
 
   server->listen();
+  auto fd = server->fd;
 
-  // auto &loop = loopInstance::getInstance();
+  auto &loop = loopInstance::getInstance();
   auto &epoll = epollInstance::getInstance();
 
   epoll_event event;
-  event.events = EPOLLIN | EPOLLET;
-  event.data.ptr = acceptAll(server, httpHandle).detach().address();
-  epoll.addEvent(server->fd, &event);
+  event.events = EPOLLIN;
+  event.data.ptr = acceptAll(std::move(server), httpHandle).detach().address();
+  epoll.addEvent(fd, &event);
 
-  // loop.addTask(epollWaitEvent().detach(), true);
+  loop.addTask(epollWaitEvent(100).detach(), true);
 
   std::vector<std::jthread> threads;
   for (int _ = 0; _ < threadCount; _++) {
     threads.emplace_back(runTasks);
   }
 
-  auto epollTask = epollWaitEvent();
+  // auto epollTask = epollWaitEvent(100);
   while (true) {
-    // loop.runTasks();
-    epollTask.resume();
+    loop.runTasks();
+    // epollTask.resume();
   }
 }
 
