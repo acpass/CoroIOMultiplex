@@ -97,10 +97,11 @@ Task<> responseHandler(std::shared_ptr<reactorSocket> socket,
   while (true) {
     size_t sendBytes = 0;
     // off_t offset = 0;
+    size_t restSize = file.size;
     auto fileMem =
         ::mmap(nullptr, file.size, PROT_READ, MAP_PRIVATE, file.fd, 0);
 
-    auto sendResult = socket->send((char *)fileMem, file.size);
+    auto sendResult = socket->send(((char *)fileMem) + sendBytes, restSize);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -118,6 +119,7 @@ Task<> responseHandler(std::shared_ptr<reactorSocket> socket,
     } // error handle
     else {
       sendBytes += sendResult.value();
+      restSize -= sendResult.value();
       if (sendBytes >= file.size) {
         munmap(fileMem, file.size);
         break;
