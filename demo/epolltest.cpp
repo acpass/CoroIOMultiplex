@@ -5,8 +5,7 @@
 #include "async/Tasks.hpp"
 #include "http/Socket.hpp"
 #include "tl/expected.hpp"
-#include "utils.hpp/BufferPool.hpp"
-#include "utils.hpp/ErrorHandle.hpp"
+#include "utils/DEBUG.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -24,24 +23,18 @@
 
 using namespace ACPAcoro;
 
-std::pmr::synchronized_pool_resource poolResource{
-    {.max_blocks_per_chunk = 1024, .largest_required_pool_block = 1024}};
-// bufferPool<char, 1024> bufferPoolInstance;
-
 struct readBuffer {
   char buffer[1024];
 };
 
-void pooltest() {
-  auto ptr = std::allocate_shared<int>(
-      std::pmr::polymorphic_allocator<int>(&poolResource), 40);
-}
+auto &threadPoolInst = threadPool::getInstance();
 
-Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
-                                        // std::span<char> buffer,
-                                        // char *buffer,
-                                        std::shared_ptr<std::string> buffer,
-                                        size_t size) {
+auto epollInst = epollInstance(threadPoolInst);
+
+Task<> writer(std::shared_ptr<reactorSocket> socket,
+              // std::span<char> buffer,
+              // char *buffer,
+              std::shared_ptr<std::string> buffer, size_t size) {
   // std::println("Writing to socket {}", socket->fd);
   auto fullsize = buffer->size();
   while (true) {
@@ -52,16 +45,16 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
               make_error_code(std::errc::resource_unavailable_try_again) ||
           sendResult.error() ==
               make_error_code(std::errc::operation_would_block)) {
-        co_yield {};
+        co_await threadPoolInst.scheduler;
       } else {
         std::println("Error: {}", sendResult.error().message());
-        co_return {};
+        co_return;
       }
     } else {
       written += sendResult.value();
       size -= sendResult.value();
       if (written >= fullsize) {
-        co_return {};
+        co_return;
       }
     }
     // bufferPoolInstance.returnBuffer(buffer);
@@ -71,90 +64,81 @@ Task<int, yieldPromiseType<int>> writer(std::shared_ptr<reactorSocket> socket,
 // bug: if the client finish sending, but do not close the connection
 // the server will create the last writer task, and yield to wait for the
 // epoll
-tl::expected<void, std::error_code>
-echoHandle(std::shared_ptr<reactorSocket> socket) {
+//
+Task<> echoHandle(std::shared_ptr<reactorSocket> socket) {
   char tmpBuffer[1024];
 
-  auto buffer = std::make_shared<std::string>();
+  debug("start handle fd: {}", socket->fd);
   while (true) {
-    // auto buffer = bufferPoolInstance.getBuffer();
-    auto read =
-        socket->recv(tmpBuffer, 1024)
-            .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
-              if (readCnt == 0) {
-                return tl::unexpected(make_error_code(socketError::eofError));
-              }
-              return readCnt;
-            })
-            .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
-              buffer->append(tmpBuffer, readCnt);
-              return readCnt;
-            });
+    auto buffer = std::make_shared<std::string>();
+    // any individual request
+    while (true) {
+      // auto buffer = bufferPoolInstance.getBuffer();
 
-    if (!read) {
-      if (read.error() ==
-              make_error_code(std::errc::resource_unavailable_try_again) ||
-          read.error() == make_error_code(std::errc::operation_would_block) ||
-          read.error() == make_error_code(socketError::eofError)) {
+      auto read =
+          socket->recv(tmpBuffer, 1024)
+              .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
+                if (readCnt == 0) {
+                  return tl::unexpected(make_error_code(socketError::eofError));
+                }
+                return readCnt;
+              })
+              .and_then([&](int readCnt) -> tl::expected<int, std::error_code> {
+                buffer->append(tmpBuffer, readCnt);
+                return readCnt;
+              });
 
-        loopInstance::getInstance().addTask(
-            writer(socket, buffer, buffer->size()).detach(), true);
+      if (!read) {
+        if (read.error() ==
+                make_error_code(std::errc::resource_unavailable_try_again) ||
+            read.error() == make_error_code(std::errc::operation_would_block) ||
+            read.error() == make_error_code(socketError::eofError)) {
 
-        if (read.error() != make_error_code(socketError::eofError)) {
-          return {};
+          threadPoolInst.addTask(
+              writer(socket, buffer, buffer->size()).detach());
+
+          if (read.error() != make_error_code(socketError::eofError)) {
+            co_await threadPoolInst.scheduler;
+            break;
+          } else {
+            co_return;
+          }
+        } else {
+          co_return;
         }
       }
-      return tl::unexpected(read.error());
     }
   }
 }
 
-void runTasks() {
-  std::println("Starting task loop on thread {}", std::this_thread::get_id());
-  while (true) {
-    loopInstance::getInstance().runTasks();
-  }
-}
-
 Task<> co_main() {
-  auto &epoll = epollInstance::getInstance();
+
+  debug("enter co_main");
   auto server = std::make_unique<serverSocket>("12312");
   server->listen();
   auto fd = server->fd;
   std::println("Listening on port 12312");
-  auto waitTask = epollWaitEvent();
+
   epoll_event event;
   event.events = EPOLLIN;
-  event.data.ptr = acceptAll(std::move(server), echoHandle).detach().address();
-  try {
-    epoll.addEvent(fd, &event);
-  } catch (std::error_code const &e) {
-    std::println("Error: {}", e.message());
-    std::terminate();
-  }
+  event.data.ptr =
+      acceptAll(std::move(server), echoHandle, epollInst, threadPoolInst)
+          .detach()
+          .address();
 
-  std::vector<std::jthread> threads;
-  for (int _ = 0; _ < 15; _++) {
-    threads.emplace_back(runTasks);
-  }
+  epollInst.addEvent(fd, &event);
 
-  loopInstance::getInstance().addTask(waitTask.detach(), true);
-
-  while (true) {
-    loopInstance::getInstance().runTasks();
-  }
+  threadPoolInst.addTask(epollInst.epollWaitEvent().detach());
+  threadPoolInst.enter();
 
   co_return;
 }
 
 int main() {
   auto mainTask = co_main();
-  loopInstance::getInstance().addTask(mainTask);
-  std::println("Starting main task");
 
   while (!mainTask.selfCoro.done()) {
-    loopInstance::getInstance().runTasks();
+    mainTask.resume();
   }
-
   return 0;
 }

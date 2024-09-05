@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <http/Socket.hpp>
 #include <memory>
-#include <memory_resource>
 #include <print>
 #include <string>
 #include <sys/epoll.h>
@@ -24,8 +23,10 @@
 
 using namespace ACPAcoro;
 
-std::filesystem::path webroot{"/home/acpass/www/"};
-int threadCount = 16;
+auto &threadPoolInst = threadPool::getInstance();
+auto epollInst = epollInstance(threadPoolInst);
+
+std::filesystem::path webroot{"/var/www/"};
 
 // char const *dummyResponse{"HTTP/1.1 200 OK\r\n"
 //                           "Content-Length: 13\r\n"
@@ -38,8 +39,8 @@ int threadCount = 16;
 //                                "Content-Length: 0\r\n"};
 // size_t const badRequestResponseSize = strlen(badRequestResponse);
 //
-Task<int, yieldPromiseType<int>>
-responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
+Task<> responseHandler(std::shared_ptr<reactorSocket> socket,
+                       httpRequest request) {
 
   httpResponse response(request, webroot);
   auto responseStr = response.serialize();
@@ -59,10 +60,10 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               std::make_error_code(std::errc::resource_unavailable_try_again) ||
           sendResult.error() ==
               make_error_code(std::errc::no_message_available)) {
-        co_yield {};
+        co_await threadPoolInst.scheduler;
       } else {
         std::println("Error: {}", sendResult.error().message());
-        co_return {};
+        co_return;
       }
 
     } // error handle
@@ -78,7 +79,7 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
 
   if (response.method == ACPAcoro::httpMessage::method::HEAD ||
       response.status != httpResponse::statusCode::OK) {
-    co_return 0;
+    co_return;
   }
 
   regularFile file;
@@ -90,10 +91,10 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               make_error_code(std::errc::too_many_files_open) ||
           openResult.error() ==
               make_error_code(std::errc::too_many_files_open_in_system)) {
-        co_yield {};
+        co_await threadPoolInst.scheduler;
       } else {
         println("Error: {}", openResult.error().message());
-        co_return {};
+        co_return;
       }
     } else {
       // if open successfully, break the loop
@@ -115,10 +116,10 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
               std::make_error_code(std::errc::resource_unavailable_try_again) ||
           sendResult.error() ==
               make_error_code(std::errc::no_message_available)) {
-        co_yield {};
+        co_await threadPoolInst.scheduler;
       } else {
         std::println("Error: {}", sendResult.error().message());
-        co_return {};
+        co_return;
       }
 
     } // error handle
@@ -165,11 +166,10 @@ responseHandler(std::shared_ptr<reactorSocket> socket, httpRequest request) {
   //   std::println("Handling error from socket {}", socket->fd);
   //   std::println("Status: {}", httpErrorCode().message((int)status));
   // }
-  co_return 0;
+  co_return;
 }
 
-tl::expected<void, std::error_code>
-httpHandle(std::shared_ptr<reactorSocket> socket) {
+Task<> httpHandle(std::shared_ptr<reactorSocket> socket) {
   // std::println("Handling socket {}", socket->fd);
 
   httpRequest request;
@@ -217,17 +217,11 @@ httpHandle(std::shared_ptr<reactorSocket> socket) {
     if (requestResult.error() ==
         make_error_code(httpErrc::UNCOMPLETED_REQUEST)) {
       // mean yield
-      return {};
+      co_await threadPoolInst.scheduler;
     }
-    return tl::unexpected(requestResult.error());
-  }
-  return {};
-}
-
-void runTasks() {
-  auto &loop = loopInstance::getInstance();
-  while (true) {
-    loop.runTasks();
+    co_return;
+  } else {
+    co_await threadPoolInst.scheduler;
   }
 }
 
@@ -237,26 +231,18 @@ Task<> co_main(std::string const &port) {
   server->listen();
   auto fd = server->fd;
 
-  auto &loop = loopInstance::getInstance();
-  auto &epoll = epollInstance::getInstance();
-
   epoll_event event;
   event.events = EPOLLIN;
-  event.data.ptr = acceptAll(std::move(server), httpHandle).detach().address();
-  epoll.addEvent(fd, &event);
+  event.data.ptr =
+      acceptAll(std::move(server), httpHandle, epollInst, threadPoolInst)
+          .detach()
+          .address();
+  epollInst.addEvent(fd, &event);
 
-  loop.addTask(epollWaitEvent(100).detach(), true);
+  threadPoolInst.addTask(epollInst.epollWaitEvent(100).detach());
+  threadPoolInst.enter();
 
-  std::vector<std::jthread> threads;
-  for (int _ = 0; _ < threadCount; _++) {
-    threads.emplace_back(runTasks);
-  }
-
-  // auto epollTask = epollWaitEvent(100);
-  while (true) {
-    loop.runTasks();
-    // epollTask.resume();
-  }
+  co_return;
 }
 
 int main(int argc, char *argv[]) {
@@ -272,14 +258,9 @@ int main(int argc, char *argv[]) {
     webroot = argv[2];
   }
 
-  if (argc >= 4) {
-    threadCount = std::stoi(argv[3]);
-  }
-
   auto mainTask = co_main(port);
-  loopInstance::getInstance().addTask(mainTask);
   while (!mainTask.selfCoro.done()) {
-    loopInstance::getInstance().runTasks();
+    mainTask.resume();
   }
 
   return 0;

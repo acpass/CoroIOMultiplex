@@ -1,8 +1,10 @@
 #pragma once
 
 #include "async/Epoll.hpp"
+#include "async/Loop.hpp"
 #include "async/Tasks.hpp"
 #include "tl/expected.hpp"
+#include "utils/DEBUG.hpp"
 #include "utils/ErrorHandle.hpp"
 
 #include <chrono>
@@ -180,38 +182,38 @@ struct reactorSocket : public socketBase {
   //     timeoutTable;
 };
 
-using handlerType = std::function<tl::expected<void, std::error_code>(
-    std::shared_ptr<reactorSocket>)>;
+using handlerType = std::function<Task<>(std::shared_ptr<reactorSocket>)>;
 
 // handler returning negative value means that the socket should be closed
-inline Task<int, yieldPromiseType<int>>
-handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
-  while (true) {
-    auto opterror = handler(sock);
+// inline Task<int, yieldPromiseType<int>>
+// handleSocket(std::shared_ptr<reactorSocket> sock, handlerType handler) {
+//   while (true) {
+//     auto opterror = handler(sock);
+//
+//     // if the handler returns an error, handle it
+//     if (!opterror) {
+//       if (opterror.error() == make_error_code(socketError::eofError) ||
+//           opterror.error() == make_error_code(std::errc::connection_reset)) {
+//
+//         co_return {};
+//
+//       } else {
+//         throw std::system_error(opterror.error());
+//       }
+//     }
+//
+//     // epoll_event event;
+//     // event.events   = EPOLLIN | EPOLLONESHOT;
+//     // event.data.ptr = (co_await getSelfAwaiter()).address();
+//     // epollInstance::getInstance().modifyEvent(sock->fd, &event);
+//
+//     co_yield {};
+//   }
+// }
 
-    // if the handler returns an error, handle it
-    if (!opterror) {
-      if (opterror.error() == make_error_code(socketError::eofError) ||
-          opterror.error() == make_error_code(std::errc::connection_reset)) {
-
-        co_return {};
-
-      } else {
-        throw std::system_error(opterror.error());
-      }
-    }
-
-    // epoll_event event;
-    // event.events   = EPOLLIN | EPOLLONESHOT;
-    // event.data.ptr = (co_await getSelfAwaiter()).address();
-    // epollInstance::getInstance().modifyEvent(sock->fd, &event);
-
-    co_yield {};
-  }
-}
-
-inline Task<int, yieldPromiseType<int>>
-acceptAll(std::unique_ptr<serverSocket> server, handlerType handler) {
+inline Task<> acceptAll(std::unique_ptr<serverSocket> server,
+                        handlerType handler, epollInstance &epollInst,
+                        threadPool &poolInst = threadPool::getInstance()) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -224,7 +226,9 @@ acceptAll(std::unique_ptr<serverSocket> server, handlerType handler) {
         // event.events   = EPOLLIN | EPOLLONESHOT;
         // event.data.ptr = (co_await getSelfAwaiter()).address();
         // epollInstance::getInstance().modifyEvent(server.fd, &event);
-        co_yield {};
+
+        co_await poolInst.scheduler;
+
         continue;
       } else {
         throw std::system_error(errno, std::system_category());
@@ -233,19 +237,17 @@ acceptAll(std::unique_ptr<serverSocket> server, handlerType handler) {
     auto client = std::make_shared<reactorSocket>(clientfd);
     // std::println("Accepted connection on fd {}", clientfd);
 
-    auto task = handleSocket(client, handler);
+    auto task = handler(client);
     epoll_event event;
     event.events = EPOLLIN | EPOLLRDHUP | EPOLLET;
     event.data.ptr = task.detach().address();
 
-    epollInstance::getInstance()
+    epollInst
         .addEvent(clientfd, &event)
-        .or_else([](auto const &e) {
-          std::println("Error adding event: {}", e.message());
-          std::terminate();
-        });
+
+        .or_else([](auto const &) { std::terminate(); });
   }
-  co_return {};
+  co_return;
 };
 
 } // namespace ACPAcoro

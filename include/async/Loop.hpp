@@ -239,7 +239,10 @@ public:
 
   struct scheduleAwaiter {
     bool await_ready() { return false; }
-    void await_suspend(std::coroutine_handle<> handle) { pool.addTask(handle); }
+    void await_suspend(std::coroutine_handle<> handle) {
+      // debug("schedule from a coroutine");
+      pool.addTask(handle);
+    }
     void await_resume() {}
 
     threadPool &pool;
