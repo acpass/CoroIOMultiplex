@@ -17,7 +17,7 @@ struct timerAwaiter {
     if (callBackCoro != nullptr) {
       coro = callBackCoro;
     }
-    loopInstance::getInstance().addTimer(coro, time);
+    // loopInstance::getInstance().addTimer(coro, time);
     return std::noop_coroutine();
   }
 

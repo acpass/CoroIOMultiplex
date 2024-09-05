@@ -15,6 +15,7 @@
 #include <oneapi/tbb/concurrent_vector.h>
 #include <oneapi/tbb/detail/_task.h>
 #include <print>
+#include <pthread.h>
 #include <set>
 #include <shared_mutex>
 #include <stdexcept>
@@ -194,7 +195,7 @@ public:
 
       if (taskBinding.size() < 10000) {
         cleanLock.unlock();
-        std::this_thread::sleep_for(30s);
+        debug("nothing to clean, clean work sleep");
       } else {
         std::unordered_map<queueListIter,
                            std::unordered_set<std::coroutine_handle<>>,
@@ -232,8 +233,13 @@ public:
         }
 
         cleanLock.unlock();
+        debug("clean up, go sleep");
 
       } // cleanWork
+
+      std::this_thread::sleep_for(30s);
+      debug("clean work wake up");
+
     } // while
   }
 
@@ -248,142 +254,6 @@ public:
     threadPool &pool;
   } scheduler;
 }; // threadPool
-
-class loopInstance {
-public:
-  static loopInstance &getInstance() {
-    static loopInstance instance;
-    return instance;
-  }
-
-  struct timerEvent {
-    std::coroutine_handle<> task;
-    std::chrono::time_point<std::chrono::system_clock> time;
-
-    bool operator>(timerEvent const &other) const { return time > other.time; }
-    bool operator<(timerEvent const &other) const { return time < other.time; }
-  };
-
-  // bool indicate self_refreshing
-  tbb::concurrent_queue<std::pair<std::coroutine_handle<>, bool>> readyTasks{};
-  // bool indicate end flag
-  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> runningTasks{};
-
-  tbb::concurrent_hash_map<std::coroutine_handle<>, bool> doneTasks{};
-  std::shared_mutex doneDestructLock;
-
-  std::mutex tasksMutex;
-  std::condition_variable_any tasksCV;
-
-  std::multiset<timerEvent, std::less<timerEvent>> timerEvents;
-  std::mutex timerEventsMutex;
-  std::condition_variable_any timerEventsCV;
-
-  void addTask(std::coroutine_handle<> task, bool autoRefresh = false) {
-    readyTasks.emplace(task, autoRefresh);
-  }
-
-  void addTimer(std::coroutine_handle<> task,
-                std::chrono::time_point<std::chrono::system_clock> time) {
-    std::unique_lock<std::mutex> timerEventsLock(timerEventsMutex);
-    timerEvents.emplace(task, time);
-    timerEventsLock.unlock();
-    timerEventsCV.notify_one();
-  }
-  // TODO: add a big lock to destroy all done tasks in the done task and queue
-  void runTasks() {
-    // size_t runcount = 0;
-
-    while (true) {
-      // if (runcount++ > 1000) {
-      //   break;
-      // }
-
-      std::pair<std::coroutine_handle<>, bool> task;
-      // atomic operation
-      // if the queue is empty
-      // continue
-      if (!readyTasks.try_pop(task)) {
-        break;
-      }
-
-      // atomic
-      if (!runningTasks.insert({task.first, false})) {
-
-        // if the task is already running
-        // put it back to the queue
-        readyTasks.emplace(task);
-        continue;
-      }
-
-      // let it go
-      // maybe implement a deferred destruction later
-
-      if (!task.first.done()) {
-        task.first.resume();
-      }
-
-      runningTasks.erase(task.first);
-
-      if (task.second && !task.first.done()) {
-        addTask(task.first, true);
-      }
-    }
-
-    // std::unique_lock<std::shared_mutex> lock(doneDestructLock);
-    // for (auto &c : doneTasks) {
-    //   c.destroy();
-    //   doneTasks.unsafe_erase(c);
-    // }
-  }
-
-  void runAll() {
-
-    while (!readyTasks.empty() || !timerEvents.empty()) {
-
-      runTasks();
-
-      while (!timerEvents.empty() &&
-             timerEvents.begin()->time <= std::chrono::system_clock::now()) {
-
-        std::unique_lock<std::mutex> timerEventsLock(timerEventsMutex);
-        timerEventsCV.wait(timerEventsLock, [&] {
-          return !timerEvents.empty() &&
-                 timerEvents.begin()->time <= std::chrono::system_clock::now();
-        });
-        auto task = timerEvents.begin()->task;
-        if (task.done()) [[unlikely]] {
-          timerEvents.erase(timerEvents.begin());
-          continue;
-        }
-        timerEvents.erase(timerEvents.begin());
-        timerEventsLock.unlock();
-        timerEventsCV.notify_all();
-        task.resume();
-      }
-
-      if (readyTasks.empty() && timerEvents.empty()) {
-        break;
-      }
-    }
-  }
-
-  // void runOne() {
-  //   if (!readyTasks.empty()) {
-  //     auto task = readyTasks.back();
-  //     readyTasks.pop_back();
-  //     task.resume();
-  //   } else if (!timerEvents.empty() &&
-  //              timerEvents.begin()->time <= std::chrono::system_clock::now())
-  //              {
-  //     auto task = timerEvents.begin()->task;
-  //     timerEvents.erase(timerEvents.begin());
-  //     task.resume();
-  //   }
-  // }
-
-  // for multithread loop, implement later
-};
 
 } // namespace ACPAcoro
 //

@@ -90,8 +90,7 @@ httpRequest::readRequest(reactorSocket &socket) {
       if (readResult.error() ==
               make_error_code(std::errc::resource_unavailable_try_again) ||
           readResult.error() ==
-              make_error_code(std::errc::operation_would_block) ||
-          readResult.error() == make_error_code(socketError::eofError)) {
+              make_error_code(std::errc::operation_would_block)) {
         // std::println("EWOULDBLOCK or EAGAIN");
 
         // if so, return as Success
@@ -99,13 +98,11 @@ httpRequest::readRequest(reactorSocket &socket) {
           eraseBuffer(socket.fd);
           return requestMessage;
         }
-
         // otherwise, the requestMessage is uncompletedRequests
         // return error
-        if (readResult.error() != make_error_code(socketError::eofError)) {
-          return tl::unexpected(make_error_code(httpErrc::UNCOMPLETED_REQUEST));
-        }
+        return tl::unexpected(make_error_code(httpErrc::UNCOMPLETED_REQUEST));
 
+      } else {
         eraseBuffer(socket.fd);
         return tl::unexpected(readResult.error());
       }
@@ -144,6 +141,7 @@ httpRequest::parseHeaders(std::string_view &request) {
   while (pos != 0) {
 
     if (pos == std::string_view::npos) {
+      status = httpErrc::BAD_REQUEST;
       return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
     }
     // get header line
@@ -158,6 +156,7 @@ httpRequest::parseHeaders(std::string_view &request) {
     // 1) no colon in the header line
     // 2) colon is the first character
     if (pos == std::string_view::npos || pos == 0) {
+      status = httpErrc::BAD_REQUEST;
       return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
     }
     std::string_view key = headerLine.substr(0, pos);
@@ -166,6 +165,7 @@ httpRequest::parseHeaders(std::string_view &request) {
     headerLine.remove_prefix(pos + 1);
     // get value
     if (headerLine.empty()) {
+      status = httpErrc::BAD_REQUEST;
       return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
     }
     std::string_view value = headerLine;
@@ -184,6 +184,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   size_t pos = request.find("\r\n");
   if (pos == std::string_view::npos) {
     // std::println("failed to parse in first phase");
+    status = httpErrc::BAD_REQUEST;
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
   std::string_view requestLine = request.substr(0, pos);
@@ -196,6 +197,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
     // std::println("failed to parse in second phase");
+    status = httpErrc::BAD_REQUEST;
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
   std::string_view method = requestLine.substr(0, pos);
@@ -203,6 +205,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
 
   if (!checkMethod(method)) {
     // std::println("failed to parse in third phase");
+    status = httpErrc::BAD_REQUEST;
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
 
@@ -211,6 +214,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
   pos = requestLine.find(' ');
   if (pos == std::string_view::npos) {
     // std::println("failed to parse in fourth phase");
+    status = httpErrc::BAD_REQUEST;
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
   std::string_view uri = requestLine.substr(0, pos);
@@ -224,6 +228,7 @@ httpRequest::parseFirstLine(std::string_view &request) {
 
   if (!checkVersion(version)) {
     // std::println("failed to parse in fifth phase");
+    status = httpErrc::BAD_REQUEST;
     return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
   }
 
