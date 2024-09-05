@@ -141,6 +141,7 @@ public:
     targetQueue->cv.notify_all();
   }
 
+  // run tasks for once
   void runTasks(threadTaskQueue &taskQueue) {
 
     // big lock to make sure when the clean thread is running, no task will run
@@ -151,7 +152,21 @@ public:
       // debug("Queue empty");
       cleanLock.unlock();
       taskQueue.cv.wait(lock, [&] { return !taskQueue.tasks.empty(); });
-      cleanLock.lock();
+
+      // avoid dead lock
+      // example:
+      //   A addTask add a task to the queue and wake up this thread
+      //   this thread acquire the lock and yield because of OS scheduling
+      //   now A cleanWork is waken and acquire the cleanLock
+      //   then the cleanWork will try to acquire the taskQueue lock
+      //   but it's already acquired
+      //
+      //   IT"S A DEAD LOCK
+      //
+      // so use a poll method to check if the cleanWork has been started
+      if (!cleanLock.try_lock()) {
+        return;
+      }
     }
 
     // debug("get a task");
