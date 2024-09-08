@@ -87,6 +87,8 @@ Task<> responseHandler(std::shared_ptr<asyncSocket> client,
     }
   }
 
+  auto fileMem = ::mmap(nullptr, file.size, PROT_READ, MAP_PRIVATE, file.fd, 0);
+
   // TODO: fix bug
   // few seconds after launch,
   // the sendfile will block
@@ -94,8 +96,6 @@ Task<> responseHandler(std::shared_ptr<asyncSocket> client,
     size_t sendBytes = 0;
     // off_t offset = 0;
     size_t restSize = file.size;
-    auto fileMem =
-        ::mmap(nullptr, file.size, PROT_READ, MAP_PRIVATE, file.fd, 0);
 
     auto sendResult = co_await client->send(((char *)fileMem) + sendBytes,
                                             restSize, 0, uringInst);
