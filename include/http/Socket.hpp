@@ -212,8 +212,10 @@ using handlerType = std::function<Task<>(std::shared_ptr<reactorSocket>)>;
 // }
 
 inline Task<> acceptAll(std::unique_ptr<serverSocket> server,
-                        handlerType handler, epollInstance &epollInst,
-                        threadPool &poolInst = threadPool::getInstance()) {
+                        handlerType handler, epollInstance &epollInst
+                        // ,
+                        // threadPool &poolInst = threadPool::getInstance()
+) {
   sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
 
@@ -227,7 +229,7 @@ inline Task<> acceptAll(std::unique_ptr<serverSocket> server,
         // event.data.ptr = (co_await getSelfAwaiter()).address();
         // epollInstance::getInstance().modifyEvent(server.fd, &event);
 
-        co_await poolInst.scheduler;
+        co_await std::suspend_always{};
 
         continue;
       } else {

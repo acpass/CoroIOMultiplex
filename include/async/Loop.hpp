@@ -54,6 +54,7 @@ private:
   std::mutex queueCounterMutex;
   std::condition_variable_any queueListCV;
 
+  // TODO: this rw mutex does not prefer writer
   std::shared_mutex cleanWorkMutex;
 
   std::vector<std::jthread> threads;
@@ -135,7 +136,7 @@ public:
     std::unique_lock<decltype(targetQueue->mutex)> queueLock(
         targetQueue->mutex);
 
-    targetQueue->tasks.emplace_back(task);
+    targetQueue->tasks.push_back(task);
     // debug("task add successful");
 
     queueLock.unlock();

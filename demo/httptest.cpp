@@ -190,9 +190,7 @@ Task<> co_main(std::string const &port) {
   epoll_event event;
   event.events = EPOLLIN;
   event.data.ptr =
-      acceptAll(std::move(server), httpHandle, epollInst, threadPoolInst)
-          .detach()
-          .address();
+      acceptAll(std::move(server), httpHandle, epollInst).detach().address();
   epollInst.addEvent(fd, &event);
 
   threadPoolInst.addTask(epollInst.epollWaitEvent(100).detach());
