@@ -146,6 +146,7 @@ public:
   }
 
   void return_value(T &&value) { returnValue = std::forward<T>(value); }
+  void yield_value(T &&value) { returnValue = std::forward<T>(value); }
 
   T getValue() {
     // if there is an exception, rethrow it
