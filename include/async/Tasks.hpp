@@ -78,7 +78,7 @@ public:
 
   virtual ~Task() {
     if (selfCoro) {
-      selfCoro.destroy();
+      // selfCoro.destroy();
     }
   }
   Task(std::coroutine_handle<promise_type> coro = nullptr) : selfCoro(coro) {}
@@ -147,12 +147,12 @@ public:
 
   void return_value(T &&value) { returnValue = std::forward<T>(value); }
 
-  T &getValue() {
+  T getValue() {
     // if there is an exception, rethrow it
     if (this->returnException) {
       std::rethrow_exception(this->returnException);
     }
-    return returnValue;
+    return std::move(returnValue);
   }
 
   T returnValue;

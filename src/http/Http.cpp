@@ -111,7 +111,7 @@ httpRequest::readRequest(reactorSocket &socket) {
 }
 
 tl::expected<void, std::error_code>
-httpRequest::parseResquest(std::shared_ptr<std::string> requestMsg) {
+httpRequest::parseResquest(std::unique_ptr<std::string> requestMsg) {
 
   // std::println("Parsing request message for socket {}", socket.fd);
 

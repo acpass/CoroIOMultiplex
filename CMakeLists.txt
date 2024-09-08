@@ -18,6 +18,7 @@ include_directories(include)
 
 
 add_compile_options(-std=c++26 -stdlib=libstdc++ -Wall -Wextra -Wpedantic -Werror)
+add_link_options()
 # add_compile_options(-fexperimental-library)
 SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -Og -g -fsanitize=address -fno-omit-frame-pointer -fPIE -DDEBUG")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -Ofast")
@@ -27,11 +28,15 @@ SET(CMAKE_CXX_LINKER_FLAGS_RELEASE "$ENV{LDFLAGS}")
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
+
 find_package(TBB REQUIRED)
 set(THIRD_PARTY_INCLUDE_DIRS ${TBB_INCLUDE_DIRS})
 set(THIRD_PARTY_INCLUDE_DIRS "${THIRD_PARTY_INCLUDE_DIRS} third/expected/include")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE TBB::tbb)
+target_link_libraries(${PROJECT_NAME} PRIVATE uring)
+
+
 
 include_directories(${THIRD_PARTY_INCLUDE_DIRS})
 
@@ -45,6 +50,7 @@ foreach(_demo_src ${DEMO_SRC})
   # without extension
   message("${_demo_src} -> ${_demo_target}")
   add_executable(${_demo_target} ${_demo_src}) # add target
+  target_link_libraries(${_demo_target} PRIVATE uring)
   target_link_libraries(${_demo_target} PRIVATE ${PROJECT_NAME})
   target_link_libraries(${_demo_target} PRIVATE TBB::tbb)
 endforeach(_demo_src ${DEMO_SRC})

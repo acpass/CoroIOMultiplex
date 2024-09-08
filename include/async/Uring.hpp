@@ -106,7 +106,7 @@ namespace ACPAcoro {
 
 enum class uringErr { success = 0, sqeBusy = 1 };
 
-auto uringErrCategory() -> const std::error_category & {
+inline auto uringErrCategory() -> const std::error_category & {
   class uringErrCategory : public std::error_category {
   public:
     virtual const char *name() const noexcept override { return "uringErr"; }
@@ -125,7 +125,7 @@ auto uringErrCategory() -> const std::error_category & {
   return category;
 }
 
-std::error_code make_error_code(uringErr e) {
+inline std::error_code make_error_code(uringErr e) {
   return {static_cast<int>(e), uringErrCategory()};
 }
 
@@ -141,8 +141,13 @@ struct uringInstance {
     params.flags |= IORING_SETUP_SQPOLL | IORING_SETUP_CQSIZE;
     params.sq_entries = MAX_ENTRIES;
     params.cq_entries = MAX_ENTRIES * 8;
+    params.sq_thread_idle = 10000;
 
     auto returnVal = io_uring_queue_init_params(MAX_ENTRIES, &uring, &params);
+    debug("Uring creaded");
+    debug("support features: {:016b}", params.features);
+    debug("sq_entries: {}", params.sq_entries);
+    debug("cq_entries: {}", params.cq_entries);
     if (returnVal < 0) {
       if (returnVal == -EPERM)
         debug("Failed to initialize uring: Permission denied");
@@ -161,13 +166,18 @@ struct uringInstance {
   };
 
   Task<> reapIOs() {
+    debug("Ready to reapIOs");
     while (true) {
       io_uring_cqe *cqe = nullptr;
-      int ret = io_uring_wait_cqe(&uring, &cqe);
+      int ret = io_uring_peek_cqe(&uring, &cqe);
 
       if (ret < 0) {
         if (ret == -EAGAIN) {
+          if (cqe != nullptr) {
+            io_uring_cqe_seen(&uring, cqe);
+          }
           co_await pool.scheduler;
+          continue;
         } else {
           debug("Failed to wait for cqe: {}",
                 std::system_category().message(-ret));
@@ -175,7 +185,9 @@ struct uringInstance {
         }
       } else if (cqe == nullptr) {
         co_await pool.scheduler;
+        continue;
       } else {
+
         auto caller = reinterpret_cast<userData *>(io_uring_cqe_get_data(cqe));
 
         if (cqe->res < 0) {
@@ -190,7 +202,6 @@ struct uringInstance {
 
           // deal with multishot request
         } else {
-
           // add a task for each successful request
           if (cqe->res >= 0) {
             pool.addTask(caller->multishotHandler(cqe->res).detach());
@@ -207,14 +218,6 @@ struct uringInstance {
     }
   }
 
-  void sqWake() {
-
-    unsigned flags = *uring.sq.kflags;
-    if (flags & IORING_SQ_NEED_WAKEUP) {
-      io_uring_enter(uringFd, 0, 0, IORING_ENTER_SQ_WAKEUP, nullptr);
-    }
-  }
-
   tl::expected<void, std::error_code>
   prep_send(int fd, const void *buf, size_t len, int flags, userData *usr) {
     io_uring_sqe *sqe = io_uring_get_sqe(&uring);
@@ -226,7 +229,7 @@ struct uringInstance {
 
     io_uring_prep_send(sqe, fd, buf, len, flags);
 
-    sqWake();
+    io_uring_submit(&uring);
 
     return {};
   }
@@ -242,7 +245,7 @@ struct uringInstance {
 
     io_uring_prep_recv(sqe, fd, buf, len, flags);
 
-    sqWake();
+    io_uring_submit(&uring);
     return {};
   }
 
@@ -256,7 +259,9 @@ struct uringInstance {
     io_uring_sqe_set_data(sqe, usr);
 
     io_uring_prep_multishot_accept(sqe, fd, addr, len, flags);
-    sqWake();
+
+    io_uring_submit(&uring);
+
     return {};
   }
 

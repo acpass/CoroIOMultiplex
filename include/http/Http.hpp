@@ -83,7 +83,7 @@ public:
   ~httpRequest() = default;
 
   tl::expected<void, std::error_code>
-      parseResquest(std::shared_ptr<std::string>);
+      parseResquest(std::unique_ptr<std::string>);
   tl::expected<void, std::error_code> parseHeaders(std::string_view &);
   tl::expected<void, std::error_code> parseFirstLine(std::string_view &);
 

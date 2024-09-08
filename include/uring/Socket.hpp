@@ -82,6 +82,7 @@ struct multishotAcceptAwaiter {
   bool await_suspend(std::coroutine_handle<> coro) {
     callerData.handle = coro;
     callerData.multishot = true;
+    callerData.multishotHandler = multishotHandler;
     auto addRes = uring.prep_multishot_accept_and_process(fd, nullptr, nullptr,
                                                           0, &callerData);
     if (!addRes) {
@@ -95,10 +96,12 @@ struct multishotAcceptAwaiter {
     return callerData.returnVal;
   }
 
-  multishotAcceptAwaiter(int f, uringInstance &targetRing)
-      : fd(f), uring(targetRing) {}
+  multishotAcceptAwaiter(int file, std::function<Task<>(int)> handler,
+                         uringInstance &targetRing)
+      : fd(file), multishotHandler(handler), uring(targetRing) {}
 
   int fd;
+  std::function<Task<>(int)> multishotHandler;
   uringInstance &uring;
   uringInstance::userData callerData;
 };
@@ -130,10 +133,13 @@ struct asyncSocket : socketBase {
 
 // use multishot to process sockets
 inline Task<> asyncAccept(std::unique_ptr<serverSocket> server,
-                          std::function<Task<>(int)>, uringInstance &uring) {
+                          std::function<Task<>(int)> handler,
+                          uringInstance &uring) {
   // helper awaiter
+  debug("Ready to accept");
   while (true) {
-    auto acceptRes = co_await multishotAcceptAwaiter(server->fd, uring);
+    auto acceptRes =
+        co_await multishotAcceptAwaiter(server->fd, handler, uring);
 
     if (acceptRes ||
         acceptRes.error() ==
