@@ -8,6 +8,7 @@
 #include <functional>
 #include <liburing.h>
 #include <liburing/io_uring.h>
+#include <mutex>
 #include <system_error>
 #include <variant>
 #include <vector>
@@ -220,6 +221,7 @@ struct uringInstance {
 
   tl::expected<void, std::error_code>
   prep_send(int fd, const void *buf, size_t len, int flags, userData *usr) {
+    std::scoped_lock<decltype(uringAddMutex)> lock(uringAddMutex);
     io_uring_sqe *sqe = io_uring_get_sqe(&uring);
 
     if (sqe == nullptr) {
@@ -236,6 +238,7 @@ struct uringInstance {
 
   tl::expected<void, std::error_code> prep_recv(int fd, void *buf, size_t len,
                                                 int flags, userData *usr) {
+    std::scoped_lock<decltype(uringAddMutex)> lock(uringAddMutex);
     io_uring_sqe *sqe = io_uring_get_sqe(&uring);
 
     if (sqe == nullptr) {
@@ -252,6 +255,7 @@ struct uringInstance {
   tl::expected<void, std::error_code>
   prep_multishot_accept_and_process(int fd, sockaddr *addr, socklen_t *len,
                                     int flags, userData *usr) {
+    std::scoped_lock<decltype(uringAddMutex)> lock(uringAddMutex);
     io_uring_sqe *sqe = io_uring_get_sqe(&uring);
     if (sqe == nullptr) {
       return tl::unexpected(make_error_code(uringErr::sqeBusy));
@@ -268,6 +272,7 @@ struct uringInstance {
   // a userData struct should be created by the awaiter
   // and its pointer should be passed to the uring
 private:
+  std::mutex uringAddMutex;
   threadPool &pool;
   io_uring uring;
   int uringFd;

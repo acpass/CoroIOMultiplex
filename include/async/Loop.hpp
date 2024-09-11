@@ -1,12 +1,14 @@
 #pragma once
 
 #include "utils/DEBUG.hpp"
+#include <atomic>
 #include <barrier>
 #include <chrono>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
 #include <functional>
+#include <latch>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -49,6 +51,8 @@ private:
   };
 
   std::list<threadTaskQueue> queueList;
+  std::mutex queueListMutex;
+
   using queueListIter = decltype(queueList)::iterator;
   queueListIter currentQueue;
   std::mutex queueCounterMutex;
@@ -74,6 +78,8 @@ private:
   std::mutex bindingMutex;
   std::condition_variable_any bindingCV;
 
+  std::latch threadLaunchLatch;
+
   struct iterHash {
     auto operator()(const queueListIter &iter) const {
       return std::hash<void *>()(&(*iter));
@@ -81,8 +87,8 @@ private:
   };
 
 public:
-  threadPool(size_t threadCnt = std::thread::hardware_concurrency() - 1)
-      : scheduler(*this) {
+  threadPool(size_t const threadCnt = std::thread::hardware_concurrency())
+      : threadLaunchLatch(threadCnt), scheduler(*this) {
 
     if (!(threadCnt >= 1)) {
       throw std::invalid_argument("Thread count cannot be greater than 0");
@@ -90,7 +96,20 @@ public:
 
     auto threadTask = [&]() {
       // debug("{} start", std::this_thread::get_id());
+      std::shared_lock<decltype(cleanWorkMutex)> cleanLock(cleanWorkMutex);
+      std::unique_lock<decltype(bindingMutex)> bindingLock(bindingMutex);
+      std::unique_lock<decltype(queueCounterMutex)> queueCounterLock(
+          queueCounterMutex);
+
+      std::unique_lock<decltype(queueListMutex)> listLock(queueListMutex);
       auto &queue = queueList.emplace_back();
+      listLock.unlock();
+
+      queueCounterLock.unlock();
+      bindingLock.unlock();
+      cleanLock.unlock();
+
+      threadLaunchLatch.arrive_and_wait();
 
       while (true) {
         runTasks(queue);
