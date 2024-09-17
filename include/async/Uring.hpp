@@ -3,6 +3,7 @@
 #include "async/Loop.hpp"
 #include "async/Tasks.hpp"
 #include "tl/expected.hpp"
+#include "utils/DEBUG.hpp"
 #include <atomic>
 #include <cerrno>
 #include <functional>
@@ -180,9 +181,10 @@ struct uringInstance {
           co_await pool.scheduler;
           continue;
         } else {
-          debug("Failed to wait for cqe: {}",
-                std::system_category().message(-ret));
-          throw std::system_error(-ret, std::system_category());
+          errorlog("Failed to wait for cqe: {}",
+                   std::generic_category().message(-ret));
+
+          throw std::system_error(-ret, std::generic_category());
         }
       } else if (cqe == nullptr) {
         co_await pool.scheduler;
@@ -193,7 +195,7 @@ struct uringInstance {
 
         if (cqe->res < 0) {
           caller->returnVal = tl::unexpected(
-              std::error_code(-cqe->res, std::system_category()));
+              std::error_code(-cqe->res, std::generic_category()));
         } else {
           caller->returnVal = cqe->res;
         }

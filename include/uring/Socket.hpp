@@ -9,6 +9,7 @@
 //
 #include "async/Uring.hpp"
 #include "http/Socket.hpp"
+#include "utils/DEBUG.hpp"
 #include <coroutine>
 #include <cstddef>
 #include <functional>
@@ -146,10 +147,12 @@ inline Task<> asyncAccept(std::unique_ptr<serverSocket> server,
             make_error_code(std::errc::operation_would_block) ||
         acceptRes.error() ==
             make_error_code(std::errc::resource_unavailable_try_again) ||
-        acceptRes.error() == make_error_code(uringErr::sqeBusy)) {
+        acceptRes.error() == make_error_code(uringErr::sqeBusy) ||
+        acceptRes.error() == make_error_code(std::errc::operation_canceled)) {
       continue;
     } else {
-      debug("Failed to accept: {}", acceptRes.error().message());
+      errorlog("Failed to accept: {}, {}", acceptRes.error().category().name(),
+               acceptRes.error().message());
       throw std::system_error(acceptRes.error());
     }
   }
