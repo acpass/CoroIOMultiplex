@@ -59,6 +59,43 @@ Requests/sec:  21409.40
 Transfer/sec:      1.27GB
 ```
 
+进行60s压力测试，并使用strace监控系统调用可以发现，服务器运行期间除了线程同步所需的互斥锁系统调用外，几乎没有产生任何其他系统调用，完全在用户态运行，免去了大量的地址空间切换开销。
+
+```Bash
+❯ sudo strace -c -f -p 49155
+strace: Process 49155 attached with 18 threads
+^Cstrace: Process 49171 detached
+strace: Process 49170 detached
+strace: Process 49169 detached
+strace: Process 49168 detached
+strace: Process 49167 detached
+strace: Process 49166 detached
+strace: Process 49165 detached
+strace: Process 49164 detached
+strace: Process 49163 detached
+strace: Process 49162 detached
+strace: Process 49161 detached
+strace: Process 49160 detached
+strace: Process 49159 detached
+strace: Process 49158 detached
+strace: Process 49157 detached
+strace: Process 49156 detached
+strace: Process 49154 detached
+strace: Process 49155 detached
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 94.95 1646.734140        1188   1385612    204684 futex
+  3.23   56.102935    56102935         1           clock_nanosleep
+  1.81   31.413409    31413409         1           restart_syscall
+  0.00    0.017096        5698         3           madvise
+  0.00    0.004745        4745         1           munmap
+  0.00    0.000163          81         2           close
+  0.00    0.000155         155         1           read
+  0.00    0.000079          79         1           openat
+------ ----------- ----------- --------- --------- ----------------
+100.00 1734.272722        1251   1385622    204684 total
+```
+
 # 项目结构
 
 ## 1. 协程任务框架
