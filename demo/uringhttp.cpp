@@ -136,6 +136,13 @@ readRequest(asyncSocket &client) {
         co_await threadPoolInst.scheduler;
         continue;
       }
+      if (readRes.error() == make_error_code(std::errc::connection_reset)) {
+        client.closed = true;
+        if (request->ends_with("\r\n\r\n")) {
+          co_return std::move(request);
+        }
+        co_return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
+      }
       co_return tl::unexpected(readRes.error());
     }
 
