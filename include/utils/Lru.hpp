@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -18,14 +19,12 @@ template <typename Key, typename Value> struct cacheFactory;
 template <typename Key, typename ValueBuilder>
 concept buildableWithKey =
     requires(Key key, ValueBuilder builder) {
-      ValueBuilder::wrappedType;
+      // ValueBuilder::wrappedType;
       builder.build(key);
-    }
-
-    && std::is_same_v<decltype(std::declval<ValueBuilder>().build(
-                          std::declval<Key>())),
-                      typename ValueBuilder::wrappedType>;
-;
+    } &&
+    std::is_same_v<decltype(std::declval<ValueBuilder>().build(
+                       std::declval<Key>())),
+                   typename ValueBuilder::wrappedType>;
 
 // virtual base class for the cache
 // define the interface of the cache
@@ -33,8 +32,7 @@ concept buildableWithKey =
 // ValueBuilder: a type that can build a value with the key, defined by concept
 // buildableWithKey
 template <typename Key, typename ValueBuilder>
-  requires buildableWithKey<Key, ValueBuilder> &&
-           requires(Key key) { std::hash<Key>{}(key); }
+  requires buildableWithKey<Key, ValueBuilder>
 struct cacheBase {
 
   enum class policy { LRU, LFU, FIFO };
@@ -53,10 +51,10 @@ struct cacheBase {
 
   friend struct cacheFactory<Key, ValueBuilder>;
 
-protected:
   cacheBase(int capacity) : capacity(capacity) {}
 
-  int capacity;
+protected:
+  size_t capacity;
   ValueBuilder builder;
 };
 
@@ -81,7 +79,7 @@ struct lruCache : public cacheBase<Key, ValueBuilder> {
         return nullptr;
       }
       // otherwise the key is in the head of the list
-      return map[key];
+      return *map[key];
     }
 
     // if the key is in the cache, move it to the head of the list
@@ -107,7 +105,9 @@ struct lruCache : public cacheBase<Key, ValueBuilder> {
     }
 
     if (map.size() == this->capacity) {
-      map.erase(cacheList.back());
+      auto endNode = cacheList.back();
+      auto path = endNode->path();
+      map.erase(path);
       cacheList.pop_back();
     }
 
@@ -124,9 +124,9 @@ struct lruCache : public cacheBase<Key, ValueBuilder> {
 
   friend struct cacheFactory<Key, ValueBuilder>;
 
-private:
   lruCache(int capacity) : cacheBase<Key, ValueBuilder>(capacity) {}
 
+private:
   std::mutex mtx;
   cacheListType cacheList;
   iteratorMapType map;

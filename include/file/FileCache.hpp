@@ -15,10 +15,16 @@ struct fileCache {
   friend struct fileCacheBuilder;
   char *data() { return mLoc.data(); }
   size_t size() { return mLoc.size(); }
+  std::filesystem::path path() { return mPath; }
+
+  fileCache() = default;
+  ~fileCache() {
+    if (mLoc.data() != nullptr) {
+      munmap(mLoc.data(), mLoc.size());
+    }
+  }
 
 private:
-  fileCache() = default;
-
   bool map() {
     auto ptr = mmap(nullptr, mFile.size, PROT_READ, MAP_PRIVATE, mFile.fd, 0);
     if (ptr == MAP_FAILED) {
@@ -31,6 +37,7 @@ private:
 
   std::span<char> mLoc;
   regularFile mFile;
+  std::filesystem::path mPath;
 };
 
 struct fileCacheBuilder {
@@ -40,6 +47,7 @@ struct fileCacheBuilder {
     if (!fc->mFile.open(p)) {
       return nullptr;
     }
+    fc->mPath = p;
     fc->map();
     return fc;
   }

@@ -3,6 +3,7 @@
 #include "async/Tasks.hpp"
 #include "async/Uring.hpp"
 #include "file/File.hpp"
+#include "file/FileCache.hpp"
 #include "http/Http.hpp"
 #include "http/Socket.hpp"
 #include "tl/expected.hpp"
@@ -20,18 +21,32 @@ template <typename T> using expectedRet = tl::expected<T, std::error_code>;
 
 auto &threadPoolInst = threadPool::getInstance();
 uringInstance uringInst{threadPoolInst};
+auto fileCacheLruInst =
+    fileCacheFactory::create(1024, fileCacheFactory::policy::LRU);
 std::filesystem::path webRoot;
 
 Task<> responseHandler(std::shared_ptr<asyncSocket> client,
                        httpRequest request) {
 
   httpResponse response(request, webRoot);
+
+  // int on = 1;
+  // int off = 0;
+  //
+  // setsockopt(client->fd, SOL_TCP, TCP_CORK, &on, sizeof(on));
+
+  fileCacheBuilder::wrappedType file;
+  if (response.status == httpResponse::statusCode::OK) {
+    file = fileCacheLruInst->get(response.uri);
+
+    if (file == nullptr) {
+      response.status = httpResponse::statusCode::NOT_FOUND;
+    } else {
+      response.headers.data["Content-Length"] = std::to_string(file->size());
+    }
+  }
+
   auto responseStr = response.serialize();
-
-  int on = 1;
-  int off = 0;
-
-  setsockopt(client->fd, SOL_TCP, TCP_CORK, &on, sizeof(on));
 
   while (true) {
     std::string_view sendData = *responseStr;
@@ -67,38 +82,16 @@ Task<> responseHandler(std::shared_ptr<asyncSocket> client,
     co_return;
   }
 
-  regularFile file;
-  while (true) {
-    auto openResult = file.open(response.uri);
-
-    if (!openResult) {
-      if (openResult.error() ==
-              make_error_code(std::errc::too_many_files_open) ||
-          openResult.error() ==
-              make_error_code(std::errc::too_many_files_open_in_system)) {
-        co_await threadPoolInst.scheduler;
-      } else {
-        debug("Error: {}", openResult.error().message());
-        co_return;
-      }
-    } else {
-      // if open successfully, break the loop
-      break;
-    }
-  }
-
-  auto fileMem = ::mmap(nullptr, file.size, PROT_READ, MAP_PRIVATE, file.fd, 0);
-
   // TODO: fix bug
   // few seconds after launch,
   // the sendfile will block
   while (true) {
     size_t sendBytes = 0;
     // off_t offset = 0;
-    size_t restSize = file.size;
+    size_t restSize = file->size();
 
-    auto sendResult = co_await client->send(((char *)fileMem) + sendBytes,
-                                            restSize, 0, uringInst);
+    auto sendResult =
+        co_await client->send(file->data() + sendBytes, restSize, 0, uringInst);
 
     if (!sendResult) {
       if (sendResult.error() ==
@@ -110,7 +103,6 @@ Task<> responseHandler(std::shared_ptr<asyncSocket> client,
         continue;
       } else {
         debug("Error: {}", sendResult.error().message());
-        munmap(fileMem, file.size);
         co_return;
       }
 
@@ -118,14 +110,13 @@ Task<> responseHandler(std::shared_ptr<asyncSocket> client,
     else {
       sendBytes += sendResult.value();
       restSize -= sendResult.value();
-      if (sendBytes >= file.size) {
-        munmap(fileMem, file.size);
+      if (sendBytes >= file->size()) {
         break;
       }
     } // send success
   } // while end
 
-  setsockopt(client->fd, SOL_TCP, TCP_CORK, &off, sizeof(off));
+  // setsockopt(client->fd, SOL_TCP, TCP_CORK, &off, sizeof(off));
 
   co_return;
 }

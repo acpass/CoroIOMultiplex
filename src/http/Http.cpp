@@ -274,7 +274,15 @@ httpResponse::httpResponse(httpRequest &request,
   version = request.version;
   status = request.status;
   method = request.method;
-  uri = std::filesystem::weakly_canonical(request.uri);
+  uri = std::move(request.uri);
+
+  for (auto &item : uri) {
+    if (item.string() == "..") {
+      status = httpMessage::statusCode::NOT_FOUND;
+      return;
+    }
+  }
+
   auto &requestHeaders = request.headers.data;
 
   if (uri.string().ends_with("/")) {
@@ -319,25 +327,12 @@ httpResponse::httpResponse(httpRequest &request,
     return;
   }
 
-  std::error_code ec{};
-  auto realPath = std::filesystem::canonical(webRoot / uri.relative_path(), ec);
+  auto realPath = webRoot / uri.relative_path();
   // println("[{}]: Real path: {}", std::chrono::utc_clock::now(),
   // realPath.string());
-  if (ec.value() != 0) {
-    status = httpMessage::statusCode::NOT_FOUND;
-    return;
-  }
-
-  auto Content_Length = std::filesystem::file_size(realPath, ec);
-
-  if (ec.value() != 0) {
-    status = httpMessage::statusCode::INTERNAL_SERVER_ERROR;
-    return;
-  }
 
   uri = realPath;
 
-  headers.data.emplace("Content-Length", std::to_string(Content_Length));
   headers.data.emplace("Content-Type", MIMEfulltype);
   headers.data.emplace("Catch-Control", "no-cache");
 
