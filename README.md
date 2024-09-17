@@ -62,7 +62,7 @@ Transfer/sec:      1.27GB
 进行60s压力测试，并使用strace监控系统调用可以发现，服务器运行期间除了线程同步所需的互斥锁系统调用外，几乎没有产生任何其他系统调用，完全在用户态运行，免去了大量的地址空间切换开销。
 
 ```Bash
-❯ sudo strace -c -f -p 49155
+> sudo strace -c -f -p 49155
 strace: Process 49155 attached with 18 threads
 ^Cstrace: Process 49171 detached
 strace: Process 49170 detached
