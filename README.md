@@ -38,6 +38,27 @@
 > uringhttp [port] [webroot path]
 ```
 
+## 压力测试
+
+使用wrk进行压力测试达到20000QPS，99%延迟在139ms以下
+
+```Bash
+> wrk -t10 -c1000 -d10s --latency -H "Accept: */*" http://127.0.0.1:12312/
+Running 10s test @ http://127.0.0.1:12312/
+  10 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    47.82ms   22.72ms 761.52ms   94.12%
+    Req/Sec     2.16k   174.91     2.86k    74.70%
+  Latency Distribution
+     50%   43.42ms
+     75%   48.18ms
+     90%   62.53ms
+     99%  139.09ms
+  215379 requests in 10.06s, 12.77GB read
+Requests/sec:  21409.40
+Transfer/sec:      1.27GB
+```
+
 # 项目结构
 
 ## 1. 协程任务框架
@@ -82,4 +103,3 @@ TODO
 ### 1.4 helper
 
 - getSelfAwaiter()：获取当前协程的coroutine_handle
-
