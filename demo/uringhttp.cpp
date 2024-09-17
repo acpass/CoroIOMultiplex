@@ -140,7 +140,11 @@ readRequest(asyncSocket &client) {
     }
 
     if (readRes.value() == 0) {
-      co_return tl::unexpected(make_error_code(socketError::eofError));
+      client.closed = true;
+      if (request->ends_with("\r\n\r\n")) {
+        co_return std::move(request);
+      }
+      co_return tl::unexpected(make_error_code(httpErrc::BAD_REQUEST));
     }
 
     if ((readRes.value() + request->size()) > 4096) {
@@ -170,6 +174,7 @@ Task<> clientHandle(int fd) {
       if (requestMsg.error().category() == httpErrorCode()) {
         request.status = (httpErrc)requestMsg.error().value();
       } else {
+        errorlog("Error: {}", requestMsg.error().message());
         co_return;
       }
     }
@@ -186,7 +191,7 @@ Task<> clientHandle(int fd) {
     threadPoolInst.addTask(
         responseHandler(client, std::move(request)).detach());
 
-    if (closeSession)
+    if (closeSession || client->closed)
       co_return;
   }
 }

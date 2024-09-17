@@ -130,6 +130,8 @@ struct asyncSocket : socketBase {
 
   asyncSocket(asyncSocket &) = delete;
   asyncSocket &operator=(asyncSocket &) = delete;
+
+  bool closed = false;
 };
 
 // use multishot to process sockets
